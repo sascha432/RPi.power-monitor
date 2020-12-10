@@ -9,7 +9,7 @@ Power Monitor for the INA3221 sensor.
 - MQTT support
 - Home assistant auto discovery
 
-![GUI](https://raw.githubusercontent.com/sascha432/master/RPI.power-monitor/images/power_monitor1.jpg)
+![GUI](https://raw.githubusercontent.com/sascha432/RPI.power-monitor/master/images/power_monitor1.jpg)
 
 ## Requirements
 
