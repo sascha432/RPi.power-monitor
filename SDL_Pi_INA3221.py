@@ -80,12 +80,12 @@ class INA3211_CONFIG:
     # 110 = 4.156 ms
     # 111 = 8.244 ms
 
-    VBUS_CT = 0b010 << 6
+    VBUS_CT = 0b011 << 6
     VBUS_CT_MASK = ~(0b111 << 6)
 
     # Bit 5-3
 
-    VSH_CT = 0b011 << 3
+    VSH_CT = 0b100 << 3
     VSH_CT_MASK = ~(0b111 << 3)
 
     # Bit 2-0
