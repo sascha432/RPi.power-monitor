@@ -1,0 +1,90 @@
+{
+    "channels": [
+        {
+            // name of the channel
+            "name": "Channel 1 (5V)",
+            // display channel in GUI
+            "enabled": true,
+            // default voltage
+            "voltage": 5.3,
+            // shunt resistance in milliohm
+            "shunt": 20.0,
+            // raw sensor offset for no current
+            "offset": -16,
+            // calibration for the shunt = real current / displayed current
+            "calibration": 0.994137858
+        },
+        {
+            "name": "Channel 2 (12V)",
+            "enabled": true,
+            "voltage": 12.0,
+            "shunt": 25.0,
+            "offset": -32,
+            "calibration": 0.985870772
+        },
+        {
+            "name": "Channel 3 (19V)",
+            "enabled": false,
+            "voltage": 19.5,
+            "shunt": 50.0
+        }
+    ],
+    "app": {
+        // start in full screen mode
+        "fullscreen": true,
+        // start without GUI
+        "headless": false,
+        // delay in seconds before sending another warning if a limit has been exceeded
+        // the delay is per channel and type of limit
+        "repeat_warning_delay": 300,
+        // command to execute if a limit has been exceeded
+        "warning_command": "logger -t {tag} {message}"
+    },
+    "plot": {
+        // refresh interval in milliseconds
+        "refresh_interval": 650,
+        // refresh interval when the backlight is off or not in fullscreen
+        "idle_refresh_interval": 2500,
+        // max. values to display
+        "max_values": 100,
+        // main plot set y max. limit to 105%
+        "plot_main_y_max": 1.05,
+        // y min. limit to 75%
+        // "plot_main_y_min": 0.75,
+        "plot_main_y_min": 0,
+        // round y limits to avoid constant resizing
+        // current i A
+        "plot_main_current_rounding": 0.25,
+        // power in W
+        "plot_main_power_rounding": 3.0,
+        // voltage plot
+        // set y min/max to 100.3%/0.990%
+        "plot_voltage_ymax": 1.003,
+        "plot_voltage_ymin": 0.990
+
+    },
+    "mqtt": {
+        // name of the device
+        "device_name": "acidpi1",
+        // mqtt server.. leave empty to disable MQTT
+        "host": "192.168.0.3",
+        // MQTT port
+        "port": 1883,
+        // update interval in seconds
+        "update_interval": 60,
+        // prefix for the topics
+        "topic_prefix": "home",
+        // enable assistant auto discovery
+        "auto_discovery": true,
+        // home assistant auto discovery
+        "auto_discovery_prefix": "homeassistant"
+    },
+    "backlight": {
+        // PIN of the backlight to monitor
+        "gpio": 18
+    },
+    "logging": {
+        // enable debug output
+        "verbose": false
+    }
+}
