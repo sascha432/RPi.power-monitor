@@ -41,27 +41,24 @@
         "warning_command": "logger -t {tag} {message}"
     },
     "plot": {
+        // display Ah or Wh
+        "display_energy": "Ah",
         // refresh interval in milliseconds
         "refresh_interval": 650,
         // refresh interval when the backlight is off or not in fullscreen
         "idle_refresh_interval": 2500,
         // max. values to display
-        "max_values": 100,
-        // main plot set y max. limit to 105%
-        "plot_main_y_max": 1.05,
-        // y min. limit to 75%
-        // "plot_main_y_min": 0.75,
-        "plot_main_y_min": 0,
+        "max_values": 500,
+        // y axis top margin
+        "main_top_margin": 1.05,
+        // y axis bottom margin
+        "main_bottom_margin": 0,
         // round y limits to avoid constant resizing
-        // current i A
-        "plot_main_current_rounding": 0.25,
-        // power in W
-        "plot_main_power_rounding": 3.0,
-        // voltage plot
-        // set y min/max to 100.3%/0.990%
-        "plot_voltage_ymax": 1.003,
-        "plot_voltage_ymin": 0.990
-
+        "main_current_rounding": 0.25,     // A
+        "main_power_rounding": 3.0,        // W
+        // margins for voltage
+        "voltage_top_margin": 1.003,
+        "voltage_bottom_margin": 0.990
     },
     "mqtt": {
         // name of the device
@@ -80,7 +77,7 @@
         "auto_discovery_prefix": "homeassistant"
     },
     "backlight": {
-        // PIN of the backlight to monitor
+        // PIN of the backlight to monitor. 0 to disable
         "gpio": 18
     },
     "logging": {

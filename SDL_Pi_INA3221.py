@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # SDL_Pi_INA3221.py Python Driver Code
 # SwitchDoc Labs March 4, 2015
 # V 1.2
@@ -168,39 +166,45 @@ class SDL_Pi_INA3221():
         self._bus.write_word_data(self._addr, register, switchdata)
         #print "Write  16 bit Word addr =0x%x register = 0x%x data = 0x%x " % (self._addr, register, data)
 
+    def _validate(self, channel):
+        if isinstance(channel, int) and channel>=0 and channel<3:
+            return True
+        raise TypeError('invalid channel: %s: %s' % (channel, type(channel)))
 
 
     def _getBusVoltage_raw(self, channel):
+        self._validate(channel)
 	#Gets the raw bus voltage (16-bit signed integer, so +-32767)
 
-        value = self._read_register_little_endian(INA3221_REG_BUSVOLTAGE_1 + (channel - 1) * 2)
+        value = self._read_register_little_endian(INA3221_REG_BUSVOLTAGE_1 + channel * 2)
         if value > 32767:
             value -= 65536
         return value
 
     def _getShuntVoltage_raw(self, channel):
+        self._validate(channel)
 	#Gets the raw shunt voltage (16-bit signed integer, so +-32767)
 
-        value = self._read_register_little_endian(INA3221_REG_SHUNTVOLTAGE_1 + (channel - 1) * 2)
+        value = self._read_register_little_endian(INA3221_REG_SHUNTVOLTAGE_1 + channel * 2)
         if value > 32767:
             value -= 65536
-        value += self._offset[channel - 1]
+        value += self._offset[channel]
         return value
 
     # public functions
 
     def setOffset(self, channel, offset):
-        self._offset[channel - 1] = offset
+        self._validate(channel)
+        self._offset[channel] = offset
 
     def setChannel(self, channel, enable=True):
-        if channel==1:
+        self._validate(channel)
+        if channel==0:
+            bit = INA3211Config.ENABLE_CHANNEL1
+        elif channel==1:
             bit = INA3211Config.ENABLE_CHANNEL1
         elif channel==2:
             bit = INA3211Config.ENABLE_CHANNEL1
-        elif channel==3:
-            bit = INA3211Config.ENABLE_CHANNEL1
-        else:
-            raise ValueError('Invalid channel: %u' % channel)
         if enable:
             self._config |= bit
         else:

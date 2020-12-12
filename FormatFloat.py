@@ -71,7 +71,7 @@ class FormatFloat(object):
             value = value[1:]
         return '%s%s%s' % (value, self.spacer, unit)
 
-f = FormatFloat()
+# f = FormatFloat()
 
 # v = 1.23456789 / 1000000
 # for i in range(0, 16):

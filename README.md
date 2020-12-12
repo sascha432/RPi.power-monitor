@@ -17,9 +17,13 @@ Power Monitor for the INA3221 sensor.
 - python3
 - matplotlib
 - smbus
-- paho.mqtt.client
-- pigpio
-- optional: commentjson
+- numpy
+
+### Optional python packges
+
+- paho.mqtt.client for MQTT support
+- pigpio for GPIO backlight support
+- commentjson for reading configuration files with comments
 
 ## Launching power monitor
 

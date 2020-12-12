@@ -20,6 +20,7 @@ parser.add_argument('-C', '--config-dir', help='location of config.json and ener
 parser.add_argument('--display', help='override DISPLAY variable', type=str, default=None)
 parser.add_argument('--headless', help='start without GUI', action='store_true', default=None)
 parser.add_argument('--fullscreen', help='start in fullscreen mode', action='store_true', default=None)
+parser.add_argument('--daemon', help='run as daemon', action='store_true', default=None)
 parser.add_argument('--verbose', help='enable debug output', action='store_true', default=None)
 parser.add_argument('--check', help='check and display configuration', action='store_true', default=False)
 parser.add_argument('--debug', help='enable debug mode', action='store_true', default=False)
@@ -51,7 +52,6 @@ if AppConfig.headless!=True:
 
 if args.check:
     print("---")
-
     def config_key(key, dct):
         if not AppConfig.is_valid_key(key):
             return False
@@ -60,7 +60,7 @@ if args.check:
     for channel in AppConfig.channels:
         d = channel.__dict__
         for key in filter(lambda key: config_key(key, d), d.keys()):
-            print('channel[%u].%s=%s%s' % (d['n'], key, d[key], channel.get_default(key)))
+            print('channel[%u].%s=%s%s' % (d['_index'], key, d[key], channel.get_default(key)))
     d = AppConfig.__dict__
     for key in filter(lambda key: config_key(key, d), d.keys()):
         print('app.%s=%s%s' % (key, d[key], AppConfig.get_default(key)))
@@ -79,5 +79,4 @@ def signal_handler(signal, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-app.start()
 app.mainloop()
