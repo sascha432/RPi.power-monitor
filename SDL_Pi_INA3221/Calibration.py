@@ -2,7 +2,6 @@
 # Author: sascha_lammers@gmx.de
 #
 
-
 # per channel calibration
 class Calibration(object):
 

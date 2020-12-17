@@ -89,13 +89,13 @@ class JsonReader(object):
             else:
                 path_str = str(path)
                 if not path_str in self._root:
-                    raise KeyError("section '%s' does not exist: failed after: %s: path: %s" % (path.name, self._last_path(path), path))
+                    raise KeyError("%s: section '%s' does not exist: failed after: %s" % (path, path.name, self._last_path(path)))
                 obj = self._root[path_str]
                 if not key in obj:
-                    raise KeyError("parameter '%s' does not exist: path: %s" % (key, path))
+                    raise KeyError("%s: parameter '%s' does not exist: path: %s" % (path, key))
                 param = obj._get_param(key)
                 if not param.is_type_allowed(val):
-                    raise KeyError("type '%s' not allowed: %s parameter: %s path: %s" % (Type.name(val), param.types, key, path))
+                    raise KeyError("%s: type '%s' not allowed: %s" % (path + key, Type.name(val), param.types))
                 val = param.prepare_value(val)
                 if self._target!=None:
                     self._set_target_value(obj, path, key, val)

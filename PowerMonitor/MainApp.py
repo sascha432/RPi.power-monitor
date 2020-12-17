@@ -2,11 +2,15 @@
 # Author: sascha_lammers@gmx.de
 #
 
+from . import *
+import SDL_Pi_INA3221
+import time
+import threading
+from threading import Lock
 import tkinter
 import tkinter as tk
 from tkinter import ttk
 import tkinter.messagebox
-from os import path
 import json
 import sys
 import math
@@ -14,21 +18,14 @@ import matplotlib.animation as animation
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
 import time
-import SDL_Pi_INA3221
 import threading
-from threading import Lock
 import glob
 import hashlib
-import FormatFloat
 import numpy as np
 try:
     import paho.mqtt.client
 except:
      paho = False
-try:
-     import commentjson.commentjson
-except:
-     commentjson = False
 try:
     import pigpio
 except:
@@ -36,528 +33,9 @@ except:
 import json
 import re
 import traceback
+import signal
 
-def fround(val, n=1):
-    if val < 0:
-        return round(val - 0.000001, n)
-    return round(val + 0.000001, n)
-
-def appdir_relpath(filename):
-    app_dir = path.dirname(path.realpath(__file__))
-    return path.realpath(path.join(app_dir, filename))
-
-def get_mac_addresses():
-    parts = []
-    path = '/sys/class/net/'
-    address = '/address'
-    # exclude list
-    exclude_ifnames = ['lo']
-    for iface in glob.glob('%s*%s' % (path, address)):
-        ifname = iface[len(path):-len(address)]
-        if not ifname in exclude_ifnames:
-            try:
-                with open(iface, 'r') as f:
-                    mac = f.readline().strip()
-                    # skip any mac address that consists of zeros only
-                    if mac.strip('0:')!='':
-                        parts.append(mac)
-            except:
-                pass
-    return parts
-
-class MergeConfig:
-
-    _modified_vars = {}
-    _show_defaults = False      # when using check config, display default value if the value has been modified
-
-    def get_default(key, vars=None):
-        if vars==None:
-            vars = MergeConfig._modified_vars
-        if MergeConfig._show_defaults and key in vars:
-            return ' (DEFAULT="%s" %s)' % (vars[key], type(vars[key]))
-        return ''
-
-    def type_str(val):
-        if isinstance(val, str):
-            return 'String'
-        if isinstance(val, int):
-            return 'Integer'
-        if isinstance(val, float):
-            return 'Float'
-        if isinstance(val, bool):
-            return 'Boolean'
-        if isinstance(val, list):
-            return 'List'
-        return str(type(val)).split("'")[1]
-
-    def is_valid_key(key):
-        return not (key.startswith('_') or key=='n' or key.upper()==key)
-
-    def key_name(sub, key, list_name):
-        if sub==None:
-            return key
-        if list_name:
-            return '%s[%s].%s' % (list_name, sub, key)
-        return '%s.%s' % (sub, key)
-
-    def merge(config, sub, obj, exception=True, list_name=None):
-        if sub!=None:
-            config = config[sub]
-        if config==None:
-            return
-        if isinstance(config, list):
-            obj = getattr(obj, sub)
-            for idx in range(0, len(config)):
-                MergeConfig.merge(config, idx, obj[idx], list_name=sub)
-            return
-
-        for key, val in config.items():
-            if key=='check' or key=='debug':
-                continue
-            if not MergeConfig.is_valid_key(key):
-                raise RuntimeError('Invalid configuration key: %s' % MergeConfig.key_name(sub, key, list_name))
-            if val!=None:
-                akey = key
-                if not hasattr(obj, akey):
-                    akey = '%s_%s' % (sub, key)
-                    if not hasattr(obj, akey):
-                        if exception:
-                            raise RuntimeError('Invalid configuration key: %s' % MergeConfig.key_name(sub, key, list_name))
-                        return
-
-                attr = getattr(obj, akey)
-                if isinstance(attr, float) and isinstance(val, int): # allow int for floats
-                    val = float(val)
-
-                if type(attr)!=type(val):
-                    raise RuntimeError('Invalid type for configuration key: %s: got %s: excepted %s: value %s' % (MergeConfig.key_name(sub, key, list_name), MergeConfig.type_str(val), MergeConfig.type_str(attr), str(val)))
-
-                if val!=attr:
-                    setattr(obj, akey, val)
-                    if not akey in obj._modified_vars:
-                        obj._modified_vars[akey] = attr
-
-class ChannelConfig:
-
-    def __init__(self, number, name, shunt=100.0, voltage=12.0, enabled=True, calibration=1.0, offset=0, color=None):
-        self._modified_vars = {}
-        self._number = number
-        self._index = number
-        self.name = name
-        self.calibration = calibration
-        self.shunt = shunt
-        self.color = color
-        self.enabled = enabled
-        self.voltage = voltage
-        self.offset = offset
-        self.max_power = None
-        self.max_current = None
-        self.max_voltage = None
-        self.min_voltage = None
-        self.warnings = {}
-
-    # # channel number: 0, 1, 2
-    # def number(self):
-    #     return self._number
-
-    # # 0 based index of active channels
-    # def key(self):
-    #     return self._index
-
-    # 1 based index of active channels
-    def num(self):
-        return self._index + 1
-
-    def __int__(self):
-        return self._index
-
-    def __index__(self):
-        return self._index
-
-    # def __str__(self):
-    #     return str(self._index)
-
-    def __repr__(self):
-        return str(self._index)
-
-    def add_warning(vtype, value):
-        t = time.monotonic()
-        if not vtype in self.warnings:
-            self.warnings[vtype] = {'min_value': 0, 'max_value': 0, 'time': t }
-        self.warnings[vtype]['min_value'] = min(self.warnings[vtype]['min_value'], value)
-        self.warnings[vtype]['max_value'] = max(self.warnings[vtype]['max_value'], value)
-        diff = t - self.warnings[vtype]['time']
-        if diff>AppConfig.repeat_warning_delay:
-            pass
-
-    def get_default(self, key):
-        return MergeConfig.get_default(key, self._modified_vars)
-
-    def get_shunt_value(self):
-        return self.shunt / (self.calibration * 1000)
-
-    def color_for(self, type):
-        if type=='Psum':
-            return AppConfig.FG_CHANNEL0
-        return self.color
-
-    def y_ticks(self):
-        s = []
-        l = []
-        for i in range(-20, 21, 10):
-            u = self.voltage + (i / 100)
-            s.append(u)
-            l.append('%.1f' % u)
-        return (s, l)
-
-class AppConfig(MergeConfig):
-
-    DISPLAY_ENERGY_AH = 'Ah'
-    DISPLAY_ENERGY_WH = 'Wh'
-
-    channels = []
-
-    config_dir = './'
-    energy_storage = 'energy.json'
-    config_file = 'config.json'
-
-    plot_refresh_interval = 250
-    plot_idle_refresh_interval = 2500
-    plot_max_values = 512
-    plot_max_time = 300
-    plot_line_width = 1.0
-
-    plot_display_energy = 'Wh'
-
-    plot_main_top_margin = 1.05
-    plot_main_bottom_margin = 0.5
-    plot_main_current_rounding = 0.25
-    plot_main_power_rounding = 2.0
-
-    plot_main_y_limit_scale_time = 5.0
-    plot_main_y_limit_scale_value = 0.05
-
-    plot_voltage_top_margin = 1.005
-    plot_voltage_bottom_margin = 0.995
-
-    compression_min_records = 200
-    compression_uncompressed_time = 10
-
-    repeat_warning_delay = 300
-    warning_command = ""
-
-    fullscreen = True
-    headless = False
-    display = '$DISPLAY'
-    verbose = False
-    daemon = False
-
-    backlight_gpio = 0
-
-    def init(dir):
-        AppConfig.config_dir = dir
-        AppConfig.channels = [
-            ChannelConfig(0, 'Channel 1'),
-            ChannelConfig(1, 'Channel 2'),
-            ChannelConfig(2, 'Channel 3'),
-        ]
-
-    def get_config_filename(file=None):
-        if file==None:
-            file = AppConfig.config_file
-        return path.realpath(path.join(AppConfig.config_dir, file))
-
-    _debug = True
-    _terminate = False
-
-    # if _debug is set to True, the entire program will be terminated
-    def _debug_exception(e):
-        if AppConfig._debug:
-            if AppConfig._terminate:
-                AppConfig._terminate.set()
-            raise e
-
-class MqttConfig(MergeConfig):
-
-    VERSION = '0.0.1'
-
-    device_name = 'PowerMonitor'
-    sensor_name = 'INA3221'
-
-    host = ''
-    port = 1883
-    keepalive = 60
-    qos = 2
-
-    topic_prefix = 'home'
-    auto_discovery = True
-    auto_discovery_prefix = 'homeassistant'
-
-    update_interval = 60
-
-    payload_online = 1
-    payload_offline = 0
-
-    motion_topic = '{topic_prefix}/{device_name}/motion_detection'
-    motion_payload = ''
-    motion_retain = False
-    motion_repeat_delay = 60
-
-    _status_topic = '{topic_prefix}/{device_name}/{sensor_name}/status'
-    _channel_topic = '{topic_prefix}/{device_name}/{sensor_name}/ch{channel}'
-
-    _auto_discovery_topic = '{auto_discovery_prefix}/sensor/{device_name}_{sensor_name}_ch{channel}_{entity}/config'
-    _model = 'RPI.ina3221-power-monitor'
-    _manufacturer = 'KFCLabs'
-    _entities = {
-        'U': 'V',
-        'P': 'W',
-        'I': 'A',
-        'EP': 'kWh',
-        'EI': 'Ah'
-    }
-    _aggregated = [
-        ('P', 'W'),
-        ('E', 'kWh')
-    ]
-
-    def init(device_name):
-        MqttConfig.device_name = device_name
-
-    def _format_topic(topic, channel='-', entity='-', ts=''):
-        return topic.format(topic_prefix=MqttConfig.topic_prefix, auto_discovery_prefix=MqttConfig.auto_discovery_prefix, device_name=MqttConfig.device_name, sensor_name=MqttConfig.sensor_name, channel=channel, entity=entity, ts=ts)
-
-    def get_channel_topic(channel):
-        return MqttConfig._format_topic(MqttConfig._channel_topic, channel=channel)
-
-    def get_status_topic():
-        return MqttConfig._format_topic(MqttConfig._status_topic)
-
-    def get_motion_topic(timestamp):
-        return MqttConfig._format_topic(MqttConfig.motion_topic, ts=timestamp)
-
-    def get_auto_discovery_topic(channel, entity):
-        return MqttConfig._format_topic(MqttConfig._auto_discovery_topic, channel=channel, entity=entity)
-
-class ConfigLoader:
-
-    def load_config(args=None, exit_on_error=False):
-        try:
-            file = AppConfig.get_config_filename()
-            with open(file, 'r') as f:
-                s = f.read()
-                if commentjson!=False:
-                    config = commentjson.loads(s)
-                else:
-                    config = json.loads(s)
-                AppConfig.merge(config, 'channels', AppConfig)
-                AppConfig.merge(config, 'plot', AppConfig)
-                AppConfig.merge(config, 'backlight', AppConfig)
-                AppConfig.merge(config, 'logging', AppConfig)
-                AppConfig.merge(config, 'app', AppConfig)
-                if args:
-                    AppConfig.merge(args.__dict__, None, AppConfig)
-                MqttConfig.merge(config, 'mqtt', MqttConfig)
-        except Exception as e:
-            print("Failed to read configuration: %s" % file)
-            print(e)
-            if exit_on_error:
-                sys.exit(-1)
-
-class Channels(object):
-
-    def __init__(self):
-        object.__setattr__(self, '_channels', [])
-
-    def add(self, channel):
-        channels = object.__getattribute__(self, '_channels')
-        index = len(channels)
-        channels.append(channel)
-        channel._index = int(index)
-        Channels.num = index + 1
-
-    def get(self, number):
-        if n>=0 and n<self.get_num():
-            for channel in object.__getattribute__(self, '_channels'):
-                if int(channel)==n:
-                    return channel
-        raise AttributeError('Channel number %s does not exist' % number)
-
-    def get_num(self):
-        return len(object.__getattribute__(self, '_channels'))
-
-    def __getattribute__(self, name):
-        try:
-            object.__getattribute__(self, name)
-        except:
-            return self.__getitem__(name)
-        return object.__getattribute__(self, name)
-
-    def __getitem__(self, key):
-        if not isinstance(key, int):
-            raise TypeError('Invalid key %s: %s' % (key, type(key)))
-        channels = object.__getattribute__(self, '_channels')
-        return channels.__getitem__(key)
-
-class PlotValues(object):
-    def __init__(self, channel):
-        self._channel = channel
-        self.clear()
-
-    def __avg_attr(self, attr, num = 10):
-        values = object.__getattribute__(self, attr)
-        if not values:
-            raise ValueError('no values in list: %s' % attr)
-            # return 0
-        if num>len(values):
-            return np.average(values)
-        return np.average(values[-num:])
-
-    def __min_attr(self, attr):
-        values = object.__getattribute__(self, attr)
-        if not values:
-            raise ValueError('no values in list: %s' % attr)
-            # return None
-        return min(values)
-
-    def __max_attr(self, attr):
-        values = object.__getattribute__(self, attr)
-        if not values:
-            raise ValueError('no values in list: %s' % attr)
-            # return None
-        return max(values)
-
-    def avg_U(self, num=10):
-        return self.__avg_attr('U', num)
-
-    def avg_I(self, num=10):
-        return self.__avg_attr('I', num)
-
-    def avg_P(self, num=10):
-        return self.__avg_attr('P', num)
-
-    def min_U(self):
-        return self.__min_attr('U')
-
-    def min_I(self):
-        return self.__min_attr('I')
-
-    def min_P(self):
-        return self.__min_attr('P')
-
-    def max_U(self):
-        return self.__max_attr('U')
-
-    def max_I(self):
-        return self.__max_attr('I')
-
-    def max_P(self):
-        return self.__max_attr('P')
-
-    def voltage(self):
-        return self.U
-
-    def current(self):
-        return self.I
-
-    def power(self):
-        return self.P
-
-    def __len__(self):
-        return len(self.U)
-
-    def set_items(self, type_str, items):
-        if type_str in self._keys:
-            tmp = object.__getattribute__(self, type_str)
-            tmp = items.copy()
-            return
-        raise AttributeError('invalid type: %s' % type_str)
-
-    def items(self):
-        return self._items
-
-    def clear(self):
-        self.U = []
-        self.P = []
-        self.I = []
-        self._keys = ('U', 'I', 'P')
-        self._items = [
-            ('U', self.U),
-            ('I', self.I),
-            ('P', self.P)
-        ]
-
-
-class PlotValuesContainer(object):
-
-    def __init__(self, channels):
-        self._values = []
-        self._t = []
-        for channel in channels:
-            self._values.append(PlotValues(channel))
-
-    def clear(self):
-        self._t = []
-        for val in self._values:
-            val.clear()
-
-    def __getitem__(self, key):
-        if isinstance(key, ChannelConfig):
-            return self._values[int(key)]
-        return self._values[key]
-
-    def append_time(self, list):
-        self._t += list
-
-    def max_time(self):
-        if self._t:
-            return self._t[-1]
-        return 0
-
-    def timeframe(self, start=0, end=-1):
-        if len(self._t):
-            return self._t[end] - self._t[start]
-        return 0.0
-
-    def time(self):
-        return self._t
-
-    def find_time_index(self, time_val, timestamp=False, func=None):
-        time_max = self.max_time()
-        if func!=None:
-            f = filter(lambda t: func(t), self._t)
-        elif timestamp:
-            f = filter(lambda t: t > time_val, self._t)
-        else:
-            f = filter(lambda t: time_max - t <= time_val, self._t)
-        element = next(f, None)
-        if element==None:
-            return None
-        return self._t.index(element)
-
-    def set_items(self, type_str, channel, items):
-        if type_str=='t':
-            tmp = object.__getattribute__(self, '_t')
-            tmp = items.copy()
-        elif channel<0 or channel>=len(self._values):
-            raise ValueError('invalid channel: %u: type: %s' % (channel, type_str))
-        else:
-            self._values[channel].set_items(type_str, items)
-
-    def items(self):
-        tmp = []
-        for values in self._values:
-            tmp.append((values._channel, values))
-        return tmp
-
-    def all(self):
-        tmp = [('t', 0, self._t)]
-        for values in self._values:
-            for type, items in values.items():
-                tmp.append((type, int(values._channel), items))
-        return tmp
-
-class MainAppCLI(object):
+class MainAppCli(object):
 
     def __init__(self, logger, *args, **kwargs):
 
@@ -579,17 +57,29 @@ class MainAppCLI(object):
 
         self.init_vars()
 
+    def signal_handler(self, signal, frame):
+        self.logger.debug('exiting, signal %u...' % signal)
+        self.destroy()
+        self.quit()
+        sys.exit(signal)
+
+    def init_signal_handler(self):
+        return
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
+        signal.signal(signal.SIGKILL, self.signal_handler)
+
     def init_vars(self):
 
+        self.channels = Channels()
+        self.ina3221._calibration = ChannelCalibration()
         # zero based list of enabled channels
         # channel names are '1', '2' and '3'
-        self.channels = Channels()
         for channel in AppConfig.channels:
-            self.ina3221.setOffset(int(channel), channel.offset)
             if channel.enabled:
-                self.channels.add(channel)
+                self.channels.append(channel)
 
-        self.display_energy = AppConfig.plot_display_energy
+        self.display_energy = AppConfig.plot.display_energy
 
         self.labels = [
             {'U': 0, 'e': 0},
@@ -636,14 +126,14 @@ class MainAppCLI(object):
         thread.start()
         self.threads.append(thread)
 
-        if AppConfig.backlight_gpio:
+        if AppConfig.backlight.gpio:
             thread = threading.Thread(target=self.backlight_service, args=(), daemon=True)
             thread.start()
             self.threads.append(thread)
 
-        if AppConfig.plot_max_values<200:
+        if AppConfig.plot.max_values<200:
             self.logger.warning('plot_max_values < 200, recommended ~400')
-        elif AppConfig.plot_max_time<=300 and AppConfig.plot_max_values<AppConfig.plot_max_time:
+        elif AppConfig.plot.max_time<=300 and AppConfig.plot.max_values<AppConfig.plot.max_time:
             self.logger.warning('plot_max_values < plot_max_time. recommended value is plot_max_time * 4 or ~400')
 
     def destroy(self):
@@ -692,7 +182,7 @@ class MainAppCLI(object):
             sleep = 2
             if self.fullscreen_state and self.animation_is_running():
                 try:
-                    dc = pi.get_PWM_dutycycle(AppConfig.backlight_gpio)
+                    dc = pi.get_PWM_dutycycle(AppConfig.backlight.gpio)
                     if dc<10:
                         self.set_screen_update_rate(False)
                         self.backlight_on = False
@@ -700,7 +190,7 @@ class MainAppCLI(object):
                         self.set_screen_update_rate(True)
                         self.backlight_on = True
                 except Exception as e:
-                    self.logger.debug('Failed to get duty cycle for GPIO %u' % AppConfig.backlight_gpio)
+                    self.logger.debug('Failed to get duty cycle for GPIO %u' % AppConfig.backlight.gpio)
                     AppConfig._debug_exception(e)
                     sleep = 60
             self.terminate.wait(sleep)
@@ -819,7 +309,7 @@ class MainAppCLI(object):
 
 
     def mqtt_publish_auto_discovery(self):
-        mac_addresses = get_mac_addresses()
+        mac_addresses = tools.get_mac_addresses()
 
         for entity, unit in MqttConfig._aggregated:
             payload = self.create_hass_auto_conf(entity, 0, unit, entity, mac_addresses)
@@ -1019,7 +509,7 @@ class MainAppCLI(object):
         except Exception as e:
             self.logger.error("failed to store energy: %s" % e)
 
-class MainApp(MainAppCLI, tk.Tk):
+class MainApp(MainAppCli, tk.Tk):
 
     MAIN_PLOT_CURRENT = 0
     MAIN_PLOT_POWER = 1
@@ -1034,7 +524,7 @@ class MainApp(MainAppCLI, tk.Tk):
 
     def __init__(self, logger):
 
-        MainAppCLI.__init__(self, logger)
+        MainAppCli.__init__(self, logger)
 
         if AppConfig.headless:
             self.logger.debug('starting headless')
@@ -1131,7 +621,7 @@ class MainApp(MainAppCLI, tk.Tk):
 
         label_font_size = [32, 28, 18]
         label_config = {
-            'font': (self.TOP_FONT, label_font_size[self.channels.get_num() - 1]),
+            'font': (self.TOP_FONT, label_font_size[len(self.channels) - 1]),
             'bg': self.BG_COLOR,
             'fg': 'white',
             'anchor': 'center'
@@ -1144,7 +634,7 @@ class MainApp(MainAppCLI, tk.Tk):
             { 'relx': 0.0, 'rely': 0.0, 'relwidth': 0.5, 'relheight': 0.17 },
             { 'relx': 0.0, 'rely': 0.0, 'relwidth': 0.33, 'relheight': 0.17 }
         ]
-        top_frame = top_frames[self.channels.get_num() - 1]
+        top_frame = top_frames[len(self.channels) - 1]
 
         # add plot to frame before labels for the z order
 
@@ -1164,7 +654,7 @@ class MainApp(MainAppCLI, tk.Tk):
         gui['geometry'] = self.geometry_info
 
         padding_y = { 1: 100, 2: 70, 3: 70 }
-        pady = -1 / padding_y[self.channels.get_num()]
+        pady = -1 / padding_y[len(self.channels)]
         padx = -1 / 50
         y = top_frame['relheight'] + pady
         if 'plot_placement' in gui:
@@ -1178,7 +668,7 @@ class MainApp(MainAppCLI, tk.Tk):
             }
             gui['plot_placement'] = plot_placement
 
-        self.ani_interval = AppConfig.plot_refresh_interval
+        self.ani_interval = AppConfig.plot.refresh_interval
         self.canvas.get_tk_widget().place(in_=top, **plot_placement)
         self.ani = animation.FuncAnimation(self.fig, self.plot_values, interval=self.ANIMATION_INIT)
 
@@ -1189,14 +679,14 @@ class MainApp(MainAppCLI, tk.Tk):
             places = []
             pad = 1 / 200
             pad2 = pad * 2
-            if self.channels.get_num()==1:
+            if len(self.channels)==1:
                 # 1 row 4 cols
                 w = 1 / 4
                 h = 1.0
                 for i in range(0, 4):
                     x = i / 4
                     places.append({'relx': x + pad, 'rely': pad, 'relwidth': w - pad2, 'relheight': h - pad2})
-            elif self.channels.get_num()==2:
+            elif len(self.channels)==2:
                 # 2x 2 row 2 cols
                 w = 1 / 2
                 h = 1 / 2
@@ -1204,7 +694,7 @@ class MainApp(MainAppCLI, tk.Tk):
                     x = (i % 2) / 2
                     y = (int(i / 2) % 2) * h
                     places.append({'relx': x + pad, 'rely': y + pad, 'relwidth': w - pad2, 'relheight': h - pad2})
-            elif self.channels.get_num()==3:
+            elif len(self.channels)==3:
                 # 3x 2 row 2 cols
                 w = 1 / 3
                 h = 1 / 2
@@ -1215,33 +705,33 @@ class MainApp(MainAppCLI, tk.Tk):
             gui['label_places'] = places.copy()
 
         for channel in self.channels:
-            if channel.enabled:
-                label_config['fg'] = channel.color
+            ch = int(channel)
+            label_config['fg'] = channel.color
 
-                frame = tk.Frame(self, bg=self.BG_COLOR)
-                frame.pack()
-                frame.place(in_=top, **top_frame)
-                top_frame['relx'] += top_frame['relwidth']
+            frame = tk.Frame(self, bg=self.BG_COLOR)
+            frame.pack()
+            frame.place(in_=top, **top_frame)
+            top_frame['relx'] += top_frame['relwidth']
 
-                label = tk.Label(self, text="- V", **label_config)
-                label.pack(in_=frame)
-                label.place(in_=frame, **places.pop(0))
-                self.labels[channel]['U'] = label
+            label = tk.Label(self, text="- V", **label_config)
+            label.pack(in_=frame)
+            label.place(in_=frame, **places.pop(0))
+            self.labels[ch]['U'] = label
 
-                label = tk.Label(self, text="- A", **label_config)
-                label.pack(in_=frame)
-                label.place(in_=frame, **places.pop(0))
-                self.labels[channel]['I'] = label
+            label = tk.Label(self, text="- A", **label_config)
+            label.pack(in_=frame)
+            label.place(in_=frame, **places.pop(0))
+            self.labels[ch]['I'] = label
 
-                label = tk.Label(self, text="- W", **label_config)
-                label.pack()
-                label.place(in_=frame, **places.pop(0))
-                self.labels[channel]['P'] = label
+            label = tk.Label(self, text="- W", **label_config)
+            label.pack()
+            label.place(in_=frame, **places.pop(0))
+            self.labels[ch]['P'] = label
 
-                label = tk.Label(self, text="- Wh", **label_config)
-                label.pack()
-                label.place(in_=frame, **places.pop(0))
-                self.labels[channel]['e'] = label
+            label = tk.Label(self, text="- Wh", **label_config)
+            label.pack()
+            label.place(in_=frame, **places.pop(0))
+            self.labels[ch]['e'] = label
 
         if AppConfig._debug:
             label = tk.Label(self, text="", font=('Verdana', 12), bg='#333333', fg=self.TEXT_COLOR, anchor='nw', wraplength=800)
@@ -1261,7 +751,7 @@ class MainApp(MainAppCLI, tk.Tk):
             self.attributes('-zoomed', True)
             self.toggle_fullscreen()
 
-        if AppConfig.backlight_gpio:
+        if AppConfig.backlight.gpio:
             self.bind("<Enter>", self.wake_up)
             self.bind("<Leave>", self.wake_up)
             self.bind("<Motion>", self.wake_up)
@@ -1286,13 +776,13 @@ class MainApp(MainAppCLI, tk.Tk):
                 return 111
         else:
             if self.plot_visibility_state==0:
-                return (self.channels.get_num() * 100) + 20 + (plot_number * 2)
+                return (len(self.channels) * 100) + 20 + (plot_number * 2)
             if self.plot_visibility_state==1:
-                return 100 + (self.channels.get_num() * 10) + (plot_number)
+                return 100 + (len(self.channels) * 10) + (plot_number)
         return None
 
     def destroy(self):
-        MainAppCLI.destroy(self)
+        MainAppCli.destroy(self)
         try:
             tk.Tk.destroy(self)
         except Exception as e:
@@ -1304,7 +794,7 @@ class MainApp(MainAppCLI, tk.Tk):
         if self.gui:
             tk.Tk.mainloop(self)
         else:
-            MainAppCLI.loop(self, False)
+            MainAppCli.loop(self, False)
 
     def quit(self):
         try:
@@ -1312,7 +802,7 @@ class MainApp(MainAppCLI, tk.Tk):
         except Exception as e:
             self.logger.error(e)
             pass
-        MainAppCLI.quit(self)
+        MainAppCli.quit(self)
 
     def init_scheme(self):
         if not self.desktop:
@@ -1403,9 +893,9 @@ class MainApp(MainAppCLI, tk.Tk):
 
     def set_screen_update_rate(self, fast=True):
         if fast:
-            rate = AppConfig.plot_refresh_interval
+            rate = AppConfig.plot.refresh_interval
         else:
-            rate = AppConfig.plot_idle_refresh_interval
+            rate = AppConfig.plot.idle_refresh_interval
 
         if not self.animation_is_running(): # set rate if paused
             self.logger.debug('changing animation update rate: %u (paused)' % rate)
@@ -1421,7 +911,7 @@ class MainApp(MainAppCLI, tk.Tk):
     def get_gui_config_filename(self, auto=''):
         if auto==True:
             auto = '-auto'
-        return 'gui-%u-%ux%u%s.json' % (self.channels.get_num(), self.geometry_info[0], self.geometry_info[1], auto)
+        return 'gui-%u-%ux%u%s.json' % (len(self.channels), self.geometry_info[0], self.geometry_info[1], auto)
 
     def toggle_debug(self, event=None):
         self.debug_label_state = (self.debug_label_state + 1) % 3
@@ -1457,7 +947,7 @@ class MainApp(MainAppCLI, tk.Tk):
 
     def reload_config(self, event=None):
         try:
-            ConfigLoader.load_config()
+            ConfigLoader.ConfigLoader.load_config()
         except Exception as e:
             self.logger.error('Reloading configuration failed: %s' % e)
         return "break"
@@ -1470,8 +960,8 @@ class MainApp(MainAppCLI, tk.Tk):
 
     def get_time_scale(self):
         if self.time_scale_factor==0:
-            return AppConfig.plot_max_time * 2;
-        return round(AppConfig.plot_max_time / self.time_scale_factor)
+            return AppConfig.plot.max_time * 2;
+        return round(AppConfig.plot.max_time / self.time_scale_factor)
 
     def store_values(self, event=None):
         fn = 'data-%u.json' % int(time.monotonic())
@@ -1578,17 +1068,17 @@ class MainApp(MainAppCLI, tk.Tk):
             if self.main_plot_index==self.MAIN_PLOT_CURRENT:
                 values_type = 'I'
                 x_range, values, items = self.get_plot_values(0, 0)
-                self.plot_main_current_rounding = AppConfig.plot_main_current_rounding
+                self.plot_main_current_rounding = AppConfig.plot.main_current_rounding
                 self.ax[0].set_ylabel('Current (A)', color=self.PLOT_TEXT, **self.PLOT_FONT)
             elif self.main_plot_index==self.MAIN_PLOT_POWER:
                 values_type = 'P'
                 x_range, values, items = self.get_plot_values(0, 1)
-                self.plot_main_current_rounding = AppConfig.plot_main_current_rounding
+                self.plot_main_current_rounding = AppConfig.plot.main_current_rounding
                 self.ax[0].set_ylabel('Power (W)', color=self.PLOT_TEXT, **self.PLOT_FONT)
             elif self.main_plot_index==self.MAIN_PLOT_POWER_SUM:
                 values_type = 'Psum'
                 x_range, values, items = self.get_plot_values(0, 0)
-                self.plot_main_current_rounding = AppConfig.plot_main_power_rounding
+                self.plot_main_current_rounding = AppConfig.plot.main_power_rounding
                 self.ax[0].set_ylabel('Aggregated Power (W)', color=self.PLOT_TEXT, **self.PLOT_FONT)
 
             self.lines[0] = []
@@ -1596,11 +1086,11 @@ class MainApp(MainAppCLI, tk.Tk):
                 line.remove()
 
             if self.main_plot_index==4:
-                line, = self.ax[0].plot(x_range, values, color=channel.color_for(values_type), label='Power', linewidth=AppConfig.plot_line_width)
+                line, = self.ax[0].plot(x_range, values, color=channel.color_for(values_type), label='Power', linewidth=AppConfig.plot.line_width)
                 self.lines[0].append(line)
             else:
                 for channel in self.channels:
-                    line, = self.ax[0].plot(self.values.time(), self.values[channel].voltage(), color=channel.color_for(values_type), label='%s %s' % (channel.name, type), linewidth=AppConfig.plot_line_width)
+                    line, = self.ax[0].plot(self.values.time(), self.values[channel].voltage(), color=channel.color_for(values_type), label='%s %s' % (channel.name, type), linewidth=AppConfig.plot.line_width)
                     self.lines[0].append(line)
 
         finally:
@@ -1621,8 +1111,8 @@ class MainApp(MainAppCLI, tk.Tk):
 
             # remove old data
             diff_t = self.values.timeframe()
-            if diff_t>AppConfig.plot_max_time:
-                idx = self.values.find_time_index(AppConfig.plot_max_time)
+            if diff_t>AppConfig.plot.max_time:
+                idx = self.values.find_time_index(AppConfig.plot.max_time)
                 # self.logger.debug('discard 0:%u' % (idx + 1))
                 # discard from all lists
                 for type, ch, items in self.values.all():
@@ -1634,7 +1124,7 @@ class MainApp(MainAppCLI, tk.Tk):
                 if start_idx!=None:
                     end_idx = self.values.find_time_index(AppConfig.compression_uncompressed_time)
                     if end_idx!=None:
-                        values_per_second = int(AppConfig.plot_max_values / float(AppConfig.plot_max_time)) + 1
+                        values_per_second = int(AppConfig.plot.max_values / float(AppConfig.plot.max_time)) + 1
 
                         count = end_idx - start_idx
                         timeframe = self.values.timeframe(start_idx, end_idx)
@@ -1781,8 +1271,8 @@ class MainApp(MainAppCLI, tk.Tk):
                     line.set_data(x_range, items)
 
                 # max. per channel
-                y_max1 = max(fround(values.max_U() * AppConfig.plot_voltage_top_margin, 2), channel.voltage + 0.02)
-                y_min1 = min(fround(values.min_U() * AppConfig.plot_voltage_bottom_margin, 2), channel.voltage - 0.02)
+                y_max1 = max(fround(values.max_U() * AppConfig.plot.voltage_top_margin, 2), channel.voltage + 0.02)
+                y_min1 = min(fround(values.min_U() * AppConfig.plot.voltage_bottom_margin, 2), channel.voltage - 0.02)
                 self.ax[channel.num()].set_ylim(top=y_max1, bottom=y_min1)
 
 
@@ -1798,20 +1288,20 @@ class MainApp(MainAppCLI, tk.Tk):
                 y_min=0
             if y_max:
                 # t=[y_max, y_min]
-                y_max = fround(y_max * AppConfig.plot_main_top_margin / self.plot_main_current_rounding) * self.plot_main_current_rounding
-                y_min = max(0, fround(y_min * AppConfig.plot_main_bottom_margin / self.plot_main_current_rounding) * self.plot_main_current_rounding)
+                y_max = fround(y_max * AppConfig.plot.main_top_margin / self.plot_main_current_rounding) * self.plot_main_current_rounding
+                y_min = max(0, fround(y_min * AppConfig.plot.main_bottom_margin / self.plot_main_current_rounding) * self.plot_main_current_rounding)
                 if y_max == y_min:
                     y_max += self.plot_main_current_rounding
 
                 # limit y axis scaling to 5 seconds and a min. change of 5% except for increased limits
                 yl2 = self.y_limits[0]
-                ml = (yl2['y_max'] - yl2['y_min']) * AppConfig.plot_main_y_limit_scale_value
+                ml = (yl2['y_max'] - yl2['y_min']) * AppConfig.plot.main_y_limit_scale_value
 
                 ts = time.monotonic()
                 if y_max>yl2['y_max'] or y_min<yl2['y_min'] or (ts>yl2['ts'] and (y_min>yl2['y_min']+ml or y_min<yl2['y_max']-ml)):
                     yl2['y_min'] = y_min
                     yl2['y_max'] = y_max
-                    yl2['ts'] = ts + AppConfig.plot_main_y_limit_scale_time
+                    yl2['ts'] = ts + AppConfig.plot.main_y_limit_scale_time
 
                     self.ax[0].set_ylim(top=y_max, bottom=y_min)
 

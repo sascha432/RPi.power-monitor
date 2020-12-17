@@ -1,3 +1,6 @@
+#
+# Author: sascha_lammers@gmx.de
+#
 
 class STRIP:
     TRAILING = 't'

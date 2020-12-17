@@ -13,9 +13,10 @@ class Config:
         if not path.exists(self._config_dir) or not path.isdir(self._config_dir):
             raise IOError('No such file or directory: %s' % (self._config_dir))
 
-    def load(self, file, target):
+    def get_filename(self, file):
+        return path.realpath(path.join(self._config_dir, file))
 
-        file = path.realpath(path.join(self._config_dir, 'config.json'))
+    def load(self, file, target):
 
         loader = Loader('app', AppConfig.App(DictType({
             'channels': AppConfig.ChannelList(RangeType(range(0, 3), AppConfig.Channel, DictType({
