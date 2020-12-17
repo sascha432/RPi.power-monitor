@@ -2,46 +2,137 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from . import *
+if __name__ != '__main__':
+    from . import Type
+
+class Index(object):
+    def __init__(self, name: str, index: int):
+        self._name = name
+        self._index = index
+
+    def __str__(self):
+        return '%s[%u]' % (self._name, self._index)
+
+    def __repr__(self):
+        return str((self._name, self._index))
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def index(self):
+        return self._index
+
+class Parts(list):
+    def __init__(self, parts=[]):
+        list.__init__(self, parts)
+
+    def copy(self):
+        return self.__copy__()
+
+    def __copy__(self):
+        return Parts(list.copy(self))
+
+    def __str__(self):
+        return '.'.join([str(p) for p in self])
+
+    def prefix(self, prefix):
+        return '.'.join([str(p) for p in [prefix] + self])
 
 class Path(object):
 
     def _is_key_valid(key):
-        return not (key.startswith('_') or key.upper()==key)
+        if not (key.startswith('_') or key.upper()==key):
+            return True
+        return False
 
-    def __init__(self, path=None):
-        if path==None:
-            self._parts = list()
-        elif isinstance(path, Path):
-            self._parts = path._parts.copy()
-        elif isinstance(path, str):
-            self._parts = path.split('.')
-        elif isinstance(path, (list)):
-            self._parts = path
-        else:
-            raise TypeError('path not (None,list,str,Path): %s' % (type_name(path)))
+    # create new Path object
+    #
+    # args
+    #   None or no arguments
+    #   (Parts,Path,str,list)[,[str[,int],(str,int)]]
+    #
+    def __init__(self, *args):
 
-    def __add__(self, name):
-        if name==None:
-            return self
-        if not isinstance(name, str):
-            raise TypeError('name not str: %s' % type_name(name))
-        return Path(self._parts + [name])
+        if len(args)==0 or args[0]==None:
+            self._parts = Parts()
+        elif len(args)>=1:
+
+            if isinstance(args[0], Parts):
+                self._parts = args[0].copy()
+            elif isinstance(args[0], Path):
+                self._parts = args[0].parts.copy()
+            elif isinstance(args[0], str):
+                self._parts = Parts(args[0].split('.'))
+            elif isinstance(args[0], list):
+                self._parts = Parts(args[0])
+            else:
+                raise TypeError('expected (Parts,Path,str,list) as first argument: %s' % (Type.name(args[0])))
+
+            if len(args)==2:
+                if isinstance(args[1], tuple):
+                    self._parts.append(Index(args[1][0], args[1][1]))
+                else:
+                    self._parts.append(args[1])
+            elif len(args)==3:
+                self._parts.append(Index(args[1], args[2]))
+
+    def __copy__(self):
+        return Path(self)
+
+    def copy(self):
+        return self.__copy__()
+
+    def __add__(self, value):
+        if value==None:
+            return Path(self)
+        if isinstance(value, int):
+            return Path(self._parts[0:-1], (self._parts[-1], value))
+        if isinstance(value, str):
+            return Path(self._parts, value)
+        raise TypeError('expected int,str: %s' % Type.name(value))
 
     def __str__(self):
-        return '.'.join(self._parts)
+        return str(self._parts)
 
-    def __list__(self):
-        return self._parts
+    def __repr__(self):
+        return str(self._parts)
 
     def __len__(self):
         return len(self._parts)
 
-    def __getitem__(self, key):
-        if key==None:
-            return str(self)
-        if not isinstance(key, int):
-            raise TypeError('key not int: %s' % type_name(key))
-        if not len(self):
-            raise ValueError('root path cannot have an index')
-        return str(self) + '[%u]' % key
+    @property
+    def parts(self):
+        return list(self._parts)
+
+    @property
+    def name(self):
+        if len(self._parts)==0:
+            return ''
+        return self._parts[-1]
+
+    @property
+    def index(self):
+        if len(self._parts)==0 or not isinstance(self._parts[-1], Index):
+            return None
+        return self._parts[-1]._index
+
+if __name__ == '__main__':
+
+    l = []
+    l.append(Path())
+    l.append(Path(None))
+    l.append(Path('key1', 'key2', 5))
+    l.append(Path('key1', ('key2', 6)))
+    l.append(Path(['key1']))
+    l.append(Path(['key1', 'key2']))
+    l.append(Path(['key1', 'key2'], 'key3'))
+    l.append(Path(['key1', 'key2'], 'key3', 0))
+    l.append(Path(['key1', 'key2']) + 'key3')
+    l.append(Path(['key1', 'key2']) + 'key3' + 'key4')
+    l.append(Path(['key1', 'key2']) + 'key3' + 'key4' + 0)
+    l.append(Path(Parts(['key1', 'key2'])))
+
+    for p in l:
+        print('path=%s name=%s index=%s parts=%s' % (p, p.name, p.index, p.parts))

@@ -30,12 +30,21 @@ class Type:
     def _format_builtins(arg):
         return Type.BuiltinsFormat % arg
 
-    def __init__(self, types=[], converter=type_name):
-        try:
-            self._types = iter(types)
-        except:
+    # types             type, list or tuple of types
+    # converter         callable type to string converter
+    def __init__(self, types=(), converter=type_name):
+        if isinstance(types, tuple):
+            self._types = types
+        elif isinstance(types, list):
+            self._types = (*types,)
+        else:
             self._types = (types,)
+        for t in self._types:
+            if t!=None and not isinstance(t, type):
+                raise TypeError('expected type: %s: %s' % (type(t), t))
         self._converter = converter
+        if not callable(self._converter):
+            raise TypeError('converter not callable: %s' % type(converter))
 
     def __eq__(self, arg):
         return arg in self._types
@@ -95,6 +104,12 @@ class Type:
 
 
 # if __name__=='__main__':
+
+#     print(str == Type(None))
+#     print(str == Type())
+#     print(str == Type(str))
+#     print(str == Type((str, int)))
+#     print(float == Type((str, int)))
 
 #     from Type import Type
 #     import pprint

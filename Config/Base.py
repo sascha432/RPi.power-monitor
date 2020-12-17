@@ -3,122 +3,84 @@
 #
 
 from . import *
+import sys
 
 class Base(object):
 
-    def __init__(self, name, struct, index=None, path=None):
-        self._name = name
+    def __init__(self, struct, path=None):
+        if isinstance(struct, dict):
+            struct = DictType(struct)
         self._struct = struct
-        self._index = index
         self._path = Path(path)
+        self._params = {}
 
-    def _setup(self, path, index=None):
-        if index!=None and not isinstance(index, int):
-            raise TypeError('index not int: %s' % type_name(index))
-        self._index = index
-        self._path = Path(path)
+    def _set_path(self, path):
+        if not isinstance(path, Path):
+            path = Path(path)
+        self._path = path
         return self
 
-    def _add_param(self, name: str, param: Param):
-        if hasattr(self, '_params'):
-            if hasattr(self._params, name):
-                raise KeyError('duplicate parameter: %s' % name)
-            self._params[name] = param
-        else:
-            self._params = {name: param}
+    # returns value of parameter
+    def __getitem__(self, path_name):
+        return self._get_param(path_name).get_value()
 
-    def _add_object(self, obj):
-        if hasattr(obj, '_objects'):
-            self._objects.append(obj)
-        else:
-            self._objects = [self, obj]
+    def __setitem__(self, path_name, value):
+        self._get_param(path_name).set_value(value)
+
+    def __contains__(self, path_name):
+        return path_name in self._params
+
+    def _param_keys(self):
+        return self._params.keys()
+
+    def _param_values(self):
+        return self._params.values()
+
+    def _param_items(self):
+        return self._params.items()
+
+    # get Param object
+    def _get_param(self, path_name):
+        if not self.__contains__(path_name):
+            raise NameError('parameter %s does not exist' % path_name)
+        return self._params[path_name]
+
+    # set Param object
+    def _set_param(self, path_name, param):
+        param.name = path_name
+        param.finalize(self._path)
+        self._params[path_name] = param
+
+    def _get_children(self):
+        if hasattr(self, '_children'):
+            return self._children
+        return []
 
     def _add_child(self, obj):
+        obj._parent = self
         if hasattr(self, '_children'):
             self._children.append(obj)
         else:
             self._children = [obj]
 
-    def path(self):
-        return self._path[self._index]
-
-    def path_name(self):
-        parts = self._path._parts
-        if len(parts)==0:
-            return ''
-        return parts[-1]
+    def _get_struct(self):
+        return self._struct
 
     # keys starting with _ and UPPERCASE_ONLY are invalid
-    def _is_key_valid(self, obj, key):
-        if not (key.startswith('_') or key.upper()==key):
-            return False
-        return True
-
-    def _resolve_key(key):
-        split_key = key.split('.')
-        for section in split_key:
-            if not BaseConfig._is_key_valid(None, key):
-                raise KeyError('invalid key: section %s: %s' % (section, '.'.join(split_key)))
-
-        for obj in self._objects:
-            print(dir(obj))
-            try:
-                print(obj.__name__, tmp)
-                tmp = BaseConfig._resolve_key_in(obj, split_key)
-                return tmp
-            except:
-                pass
-        raise KeyError('key not found: section %s: %s' % (split_key[-1], '.'.join(split_key[0:-1])))
-
-    def _resolve_key_in(obj, key):
-        if isinstance(key, str):
-            key = key.split('.')
-        if key[0] == self._struct:
-            key.pop(0)
-
-        print(obj, key)
-
-        obj = self._root
-        for section in key[0:-1]:
-            print(dir(obj),section)
-            # if not BaseConfig._is_key_valid(obj, section):
-            #     raise KeyError('invalid key: %s: %s' % (section, '.'.join(key)))
-            if not hasattr(obj, section):
-                raise KeyError('key not found: section %s: %s' % (section, '.'.join(key)))
-            obj = getattr(obj, section)
-
-        if not hasattr(obj, section):
-            raise KeyError('key not found: section %s: %s' % (section, '.'.join(key)))
-        return (obj, section)
-
-    def _get(self, key):
-        (obj, attr) = self._resolve_key(key)
-        value = getattr(obj, attr)
-        if isinstance(value, (list, tuple)) and len(value)>1:
-            return value[0]
-        return value;
-
-    def _set(self, key, value):
-        (obj, attr) = self._resolve_key(key)
-        data = getattr(obj, attr)
-        if not (isinstance(data, (list, tuple)) and len(data)>1):
-            data = (data, (type(data),), data)
-        if not isinstance(value, data[1]):
-            raise TypeError('')
-        data = (value, data[1], data[2])
-        setattr(obj, data)
-
+    # override to validate keys for the section
+    def _is_key_valid(self, name):
+        return Path._is_key_valid(name)
 
 class ListBase(Base):
-    def __init__(self, name, struct, index=None, path=None):
-        Base.__init__(self, struct, index, path)
+    def __init__(self, struct, path=None):
+        Base.__init__(self, struct, path)
         self._children = []
 
     def __setitem__(self, key, val):
-        self._items[key] = val
+        self._children[key] = val
 
     def __getitem__(self, key):
-        return self._items[key]
+        return self._children[key]
 
     def __contains__(self, key):
         return key in self._children
@@ -126,7 +88,30 @@ class ListBase(Base):
     def __len__(self):
         return len(self._children)
 
+class ItemBase(Base):
+    def __init__(self, struct, index, path=None):
+        Base.__init__(self, struct, path)
+        self._index = index
 
 class Root(Base):
-    def __init__(self):
-        Base.__init__(self, None, None)
+    def __init__(self, name, child):
+        child._set_path(Path())
+        child._parent = self
+        Base.__init__(self, {}, child._path)
+        self._parent = None
+        self._children = [child]
+        self._root_name = name
+        self._objects = {}
+
+    @property
+    def _child(self):
+        return self._children[0]
+
+    def __setitem__(self, key, obj):
+        self._objects[str(key)] = obj
+
+    def __getitem__(self, key):
+        return self._objects[str(key)]
+
+    def __contains__(self, key):
+        return str(key) in self._objects

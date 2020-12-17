@@ -3,85 +3,76 @@
 #
 
 from . import *
+import sys
+import copy
 
 class Loader(object):
 
-    def __init__(self, config):
-        if not isinstance(config, Base):
-            raise TypeError('struct %s: ewxpected Base' % type_str(config))
-        self._root = config
-        self._create_struct(None, self._root, Root())
-
-    def print_struct(self, obj=None):
-        if obj==None:
-            print('-- CONFIG STRUCT --')
-            obj = self._root
-        print("type=%s path=%s parent=%s struct=%s" % (Type.name(obj), obj.path(), Type.name(obj._parent), Type.name(obj._struct)))
-        if hasattr(obj, '_children'):
-            for child in obj._children:
-                self.print_struct(child)
-
-    # meta=True adds the type name as __type to the object
-    def to_json(self, meta=False, obj=None):
-        obj = obj!=None and obj or self._root
-        json = {}
-        if meta==True:
-            json['__type'] = Type.name(obj)
-        if hasattr(obj, '__getitem__'):
-            items = []
-            for child in obj._children:
-                items.append(self.to_json(meta, child ))
-            if meta==True:
-                json['__items'] = items
-                return json
-            return items
-
-        elif hasattr(obj, '_children'):
-            for child in obj._children:
-                json[str(child.path_name())] = self.to_json(meta, child)
-
-        return json
+    def __init__(self, name, config):
+        self._debug = False
+        # self._debug = print
+        self._root = Root(name, config)
+        self._create_root()
 
     def load(self, filename):
         pass
 
-        # print(Base._get('mqtt.hostname'))
-        # Base._set('mqtt.hostname', '192.168.0.3')
-        # print(Base._get('mqtt.hostname'))
+    def _create_params(self, obj):
+        if self._debug:
+            self._debug('_create_params item=%s keys=%s' % (Type.name(obj), [name for name in dir(obj) if obj._is_key_valid(name)]))
 
-    def _read_attr(self, obj):
-        # print('_read_attr type=%s' % Type.name(obj))
+        # add attributes first
         for name in dir(obj):
-            if Path._is_key_valid(name):
-                obj._add_param(name, Param.from_attr(obj, name))
+            value = None
+            param = None
+            try:
+                if obj._is_key_valid(name) and hasattr(obj, name):
+                    value = getattr(obj, name)
+                    param = Param.create_instance(obj, value)
+                    if param!=None:
+                        if self._debug:
+                            self._debug('_set_param(attr) name=%s item=%s parent=%s path=%s default=%s types=%s ' % (name, Type.name(obj), Type.name(obj), obj._path + name, param.default, param.types))
+                        obj._set_param(name, param)
+            except Exception as e:
+                # add more info
+                raise RuntimeError('type=%s path=%s: %s' % (Type.name(obj), obj._path + name, e))
 
-    def _add_object(self, obj, parent, path):
-        # print("_add_object %s path=<%s>%s" % (Type.name(obj), Type.name(parent), obj.path()))
-        if self._root==None:
-            self._root = obj
-            obj._parent = parent
-            obj._add_object(obj)
-        else:
-            obj._parent = parent
-            parent._add_child(obj)
-            self._root._add_object(obj)
-        self._read_attr(obj)
+            if self._debug and param==None and obj._is_key_valid(name):
+                raise RuntimeError('param==None path=%s hasattr=%s' % (obj._path + name, hasattr(obj, name)))
 
-    def _create_struct(self, name, config, parent):
-        if isinstance(config, Param):
-            # print('_add_param name=%s path=<%s>%s default=%s types=%s' % (name, Type.name(parent), parent._path + name, config.get_default(), config.get_types()))
-            parent._add_param(name, config)
-            return
-        # print('_create_struct name=%s path=<%s>%s type=%s' % (name, Type.name(parent), config.path(), Type.name(config._struct)))
-        if isinstance(config._struct, DictType):
-            config._setup(parent._path + name)
-            self._add_object(config, parent, config._path)
-            for key, val in config._struct.items():
-                self._create_struct(key, val, config)
-        elif isinstance(config._struct, RangeType):
-            config._setup(parent._path + name)
-            self._add_object(config, parent, config._path)
-            for index in config._struct['range']:
-                item = config._struct['item_type'](config._struct['struct'])
-                item._setup(config._path, index)
-                self._add_object(item, config, item._path)
+        # add parameters and override existing attributes
+        for name, param in obj._get_struct().items():
+            if isinstance(param, Param):
+                if self._debug:
+                    self._debug('_set_param(struct) name=%s item=%s parent=%s path=%s default=%s types=%s ' % (name, Type.name(obj), Type.name(obj), obj._path + name, param.default, param.types))
+                obj._set_param(name, param)
+
+
+    def _create_root(self):
+        self._root._set_path(Path())
+        self._create_children(self._root._child, self._root._child._get_struct(), self._root)
+        self._create_params(self._root._child)
+
+    def _add_object(self, name, obj, parent):
+        obj._set_path(parent._path + name)
+        if self._debug:
+            self._debug("_add_object item=%s parent=%s path=%s" % (Type.name(obj), Type.name(parent), obj._path))
+        parent._add_child(obj)
+        self._root[obj._path] = obj
+
+    def _create_children(self, obj, struct, parent):
+        if self._debug:
+            self._debug('_create_children obj=%s struct=%s path=%s parent=%s' % (Type.name(obj), Type.name(struct), parent._path, Type.name(parent)))
+        if isinstance(struct, DictType):
+            for name, child in struct.items():
+                if isinstance(child, Base):
+                    self._add_object(name, child, obj)
+                    self._create_children(child, child._get_struct(), obj)
+                    self._create_params(child)
+        elif isinstance(struct, RangeType):
+            for index in struct._range:
+                range_struct = copy.deepcopy(struct._get_struct())
+                child = struct._item_type(range_struct, index)
+                self._add_object(index, child, obj)
+                self._create_children(child, range_struct, obj)
+                self._create_params(child)

@@ -9,10 +9,14 @@ class DictType(dict, StructType):
     def __init__(self, items={}):
         dict.__init__(self, items)
 
-class RangeType(dict, StructType):
+class RangeType(StructType):
     def __init__(self, index, item_type, struct=DictType()):
-        dict.__init__(self, {
-            'range': index,
-            'item_type': item_type,
-            'struct': struct
-        })
+        self._range = index
+        self._item_type = item_type
+        self._struct = struct
+
+    def items(self):
+        return []
+
+    def _get_struct(self):
+        return self._struct
