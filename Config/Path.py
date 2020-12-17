@@ -36,8 +36,8 @@ class Parts(list):
     def __str__(self):
         return '.'.join([str(p) for p in self])
 
-    def prefix(self, prefix):
-        return '.'.join([str(p) for p in [prefix] + self])
+    def join(self, sep='.', prefix=None):
+        return sep.join([str(p) for p in (prefix!=None and ([prefix] + self) or self)])
 
 class Path(object):
 

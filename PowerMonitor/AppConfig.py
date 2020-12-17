@@ -3,6 +3,8 @@
 #
 
 import Config
+class app(object):
+    pass
 
 class App(Config.Base):
 
@@ -25,8 +27,7 @@ class ChannelList(Config.ListBase):
 
 class Channel(Config.ItemBase):
 
-    # name = 'Channel'
-    # color = ''
+    number = (lambda path: path.index, (Config.Param.ReadOnly,))
     enabled = False
     voltage = (None, (float))
 
@@ -95,7 +96,7 @@ class Mqtt(Config.Base):
     sensor_name = 'INA3221'
 
     host = (None, str)
-    port = (1883, (int,), range(0, 65535))
+    port = Config.RangeConverter.value(1883, range(0, 65535), (int,))
     keepalive = Config.TimeConverter.value(60)
     qos = (2, (int,), [0, 1, 2])
 
@@ -109,7 +110,7 @@ class Mqtt(Config.Base):
     payload_offline = '0'
 
     motion_topic = '{topic_prefix}/{device_name}/motion_detection'
-    motion_payload = (None, (int, str, float), lambda val: str(val))
+    motion_payload = (None, (int, str), lambda val, param: str(val))
     motion_retain = False
     motion_repeat_delay = Config.TimeConverter.value(30)
 

@@ -3,18 +3,55 @@
 #
 
 from . import ObjectWriter
-from . import Path
+from . import (Path, Parts)
+from . import Index
 from . import Type
 import json
 
 class JsonReader(object):
 
-    def __init__(self, root, use_config_root=True):
+    def __init__(self, root, use_config_root=True, target=None):
         self._root = root
         self._use_config_root = use_config_root
         self._json = ObjectWriter(root).create_object()
+        self._target = target
 
-    def loads_from(self, file):
+    def _apply_defaults(self, target, defaults):
+        for name, param in defaults._param_items():
+            setattr(target, name, param.default)
+        return target
+
+    def _set_target_value(self, defaults, path, name, value):
+
+        target = self._target
+        index = 1
+        for part in path.parts[1:]:
+            if isinstance(part, Index):
+                if not hasattr(target, part.name):
+                    obj = {}
+                    setattr(target, part.name, obj)
+                    target = obj
+                else:
+                    target = getattr(target, part.name)
+                if not part.index in target:
+                    obj = type('__%s_%s_%s' % (Parts(path.parts[0:index]).join('_'), part.name, part.index), (), {})()
+                    target[part.index] = obj
+                    target = self._apply_defaults(obj, defaults)
+
+                else:
+                    target = target[part.index]
+            else:
+                if not hasattr(target, part):
+                    obj = type('__%s_%s' % (Parts(path.parts[0:index]).join('_'), part), (), {})()
+                    setattr(target, part, obj)
+                    target = self._apply_defaults(obj, defaults)
+                else:
+                    target = getattr(target, part)
+            index += 1
+
+        setattr(target, name, value)
+
+    def _loads_from(self, file):
         with open(file, 'r') as f:
             config = f.read()
             try:
@@ -29,9 +66,8 @@ class JsonReader(object):
                 config = commentjson.loads(config)
 
             if self._use_config_root==False:
-                return self.loads({self._root._root_name: config})
-            else:
-                return self.loads(config)
+                return {self._root._root_name: config}
+            return config
 
     def _last_path(self, path):
         n = len(path)
@@ -60,10 +96,19 @@ class JsonReader(object):
                 param = obj._get_param(key)
                 if not param.is_type_allowed(val):
                     raise KeyError("type '%s' not allowed: %s parameter: %s path: %s" % (Type.name(val), param.types, key, path))
-                json[key] = param.prepare_value(val)
+                val = param.prepare_value(val)
+                if self._target!=None:
+                    self._set_target_value(obj, path, key, val)
+                else:
+                    json[key] = val
 
+    def loads_from(self, file):
+        return self.loads(self._loads_from(file))
 
     def loads(self, json):
         self._loads(json, Path())
+        if self._target:
+            return self._target
         return json
+
 

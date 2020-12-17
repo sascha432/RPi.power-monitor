@@ -4,6 +4,7 @@
 from . import Param
 import itertools
 import types
+import re
 
 class Converter(object):
 
@@ -91,15 +92,15 @@ class TimeConverter(Converter):
         if isinstance(value, (int, float)):
             return value
 
-        Converter.convert(self, value)
+        Converter.convert(self, value, param)
         unit = re.sub(r'[0-9\.\s]', '', value) # remove digits, dot and spaces
         if unit=='':
             unit = self._unit
 
         val = float(re.sub(r'[a-zA-Z]*$|\s', '', value)) # remove a-z and any spaces
-        m1 = self.__get_unit_to_second_multiplier(unit)
-        m2 = self.__get_unit_to_second_multiplier(self._unit)
-        val = val * (m2 / m1)
+        m1 = self._get_unit_to_second_multiplier(unit)
+        m2 = self._get_unit_to_second_multiplier(self._unit)
+        val = val * (m1 / m2)
         if int(val)==val:
             val = int(val)
         return val

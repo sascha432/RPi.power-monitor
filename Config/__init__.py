@@ -3,7 +3,7 @@
 #
 
 from .Type import (type_str, type_name, typeof, Type)
-from .Path import (Path, Index)
+from .Path import (Path, Parts, Index)
 from .Struct import (StructType, DictType, RangeType, ListType)
 from .Param import (Param)
 from .Converter import (Converter, MarginConverter, TimeConverter, RangeConverter, IteratorConverter, GeneratorConverter)

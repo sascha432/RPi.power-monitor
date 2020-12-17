@@ -18,7 +18,7 @@ class Writer(object):
         return ' ' * (level * self._indent)
 
     def _path(self, path):
-        return path._parts.prefix(self._root._root_name)
+        return path._parts.join(prefix=self._root._root_name)
 
     def _dump_child(self, obj, level):
         print("%spath=%s type=%s parent=%s struct=%s" % (self._indent_str(level), self._path(obj._path), Type.name(obj), Type.name(obj._parent), Type.name(obj._struct)), file=self._output)

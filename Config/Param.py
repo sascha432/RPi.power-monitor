@@ -3,6 +3,7 @@
 #
 
 from . import Type
+from . import Index
 import sys
 import copy
 
@@ -19,6 +20,8 @@ DEFAULT.ALLOW = DEFAULT(True)
 DEFAULT.EXCEPTION = DEFAULT(False)
 
 class Param(object):
+    class ReadOnly:
+        pass
 
     #
     # default       default value
@@ -59,6 +62,13 @@ class Param(object):
                 value = float(value)
             else:
                 raise TypeError('type %s not allowed: %s' % (Type.name(value), self._types))
+        if self._converter!=None:
+            if callable(self._converter):
+                value = self._converter(value, self)
+            else:
+                if isinstance(self._converter, tuple):
+                    self._converter = self._converter[0](self._converter[1])
+                value = self._converter.convert(value, self)
         return value
 
     # default
@@ -88,17 +98,21 @@ class Param(object):
         return self._types
 
     def is_type_allowed(self, value):
+        if Param.ReadOnly==self._types:
+            return False
         if isinstance(value, int) and float==self._types:
             return True
         return type(value)==self._types
 
-    # def validate_type(self, value):
-    #     if value == self._types:
-    #         raise TypeError('allowed types: %s' % self._types)
+    def validate_type(self, value):
+        if Param.ReadOnly==self._types:
+            return False
+        if value==self._types:
+            raise TypeError('allowed types: %s' % self._types)
 
     def convert_value(value, converter):
         if isinstance(self._converter, Converter):
-            return self._converter.convert(value, sellf)
+            return self._converter.convert(value, self)
         self.validate_type(value)
         if callable(converter):
             return converter(value)

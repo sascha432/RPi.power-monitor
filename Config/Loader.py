@@ -38,7 +38,7 @@ class Loader(object):
                         obj._set_param(name, param)
             except Exception as e:
                 # add more info
-                raise RuntimeError('type=%s path=%s: %s' % (Type.name(obj), obj._path + name, e))
+                raise RuntimeError('type=%s path=%s\n%s' % (Type.name(obj), obj._path + name, e))
 
             if self._debug and param==None and obj._is_key_valid(name):
                 raise RuntimeError('param==None path=%s hasattr=%s' % (obj._path + name, hasattr(obj, name)))
