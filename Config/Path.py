@@ -2,8 +2,7 @@
 # Author: sascha_lammers@gmx.de
 #
 
-if __name__ != '__main__':
-    from . import Type
+from . import Type
 
 class Index(object):
     def __init__(self, name: str, index: int):
@@ -118,21 +117,21 @@ class Path(object):
             return None
         return self._parts[-1]._index
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
-    l = []
-    l.append(Path())
-    l.append(Path(None))
-    l.append(Path('key1', 'key2', 5))
-    l.append(Path('key1', ('key2', 6)))
-    l.append(Path(['key1']))
-    l.append(Path(['key1', 'key2']))
-    l.append(Path(['key1', 'key2'], 'key3'))
-    l.append(Path(['key1', 'key2'], 'key3', 0))
-    l.append(Path(['key1', 'key2']) + 'key3')
-    l.append(Path(['key1', 'key2']) + 'key3' + 'key4')
-    l.append(Path(['key1', 'key2']) + 'key3' + 'key4' + 0)
-    l.append(Path(Parts(['key1', 'key2'])))
+#     l = []
+#     l.append(Path())
+#     l.append(Path(None))
+#     l.append(Path('key1', 'key2', 5))
+#     l.append(Path('key1', ('key2', 6)))
+#     l.append(Path(['key1']))
+#     l.append(Path(['key1', 'key2']))
+#     l.append(Path(['key1', 'key2'], 'key3'))
+#     l.append(Path(['key1', 'key2'], 'key3', 0))
+#     l.append(Path(['key1', 'key2']) + 'key3')
+#     l.append(Path(['key1', 'key2']) + 'key3' + 'key4')
+#     l.append(Path(['key1', 'key2']) + 'key3' + 'key4' + 0)
+#     l.append(Path(Parts(['key1', 'key2'])))
 
-    for p in l:
-        print('path=%s name=%s index=%s parts=%s' % (p, p.name, p.index, p.parts))
+#     for p in l:
+#         print('path=%s name=%s index=%s parts=%s' % (p, p.name, p.index, p.parts))

@@ -50,18 +50,16 @@ class Param(object):
     def default(self):
         return self._default
 
-    @property
-    def value(self):
-        return self._value
-
-    @value.setter
     def set_value(self, value):
-        if not type == self._types:
-            if isinstance(value, int) and float == self._types:
+        self._value = self.prepare_value(value)
+
+    def prepare_value(self, value):
+        if not type(value)==self._types:
+            if isinstance(value, int) and float==self._types:
                 value = float(value)
             else:
                 raise TypeError('type %s not allowed: %s' % (Type.name(value), self._types))
-        self._value = value
+        return value
 
     # default
     #   DEFAULT.ALLOW         return default value if value is not set
@@ -89,12 +87,14 @@ class Param(object):
     def types(self):
         return self._types
 
-    def is_type_allowed(self, type):
-        return type == self._types
+    def is_type_allowed(self, value):
+        if isinstance(value, int) and float==self._types:
+            return True
+        return type(value)==self._types
 
-    def validate_type(self, value):
-        if value == self._types:
-            raise TypeError('allowed types: %s' % self._types)
+    # def validate_type(self, value):
+    #     if value == self._types:
+    #         raise TypeError('allowed types: %s' % self._types)
 
     def convert_value(value, converter):
         if isinstance(self._converter, Converter):
@@ -107,6 +107,8 @@ class Param(object):
     def finalize(self, path):
         if callable(self._default):
             self._default = self._default(path)
+            if self._types==None:
+                self._types = Type(type(self._default))
 
     #
     # create Param object

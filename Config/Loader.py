@@ -2,8 +2,11 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from . import *
-import sys
+from . import (Root, Base, ListBase)
+from . import (DictType, RangeType)
+from . import Path
+from . import Type
+from . import Param
 import copy
 
 class Loader(object):

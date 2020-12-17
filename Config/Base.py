@@ -2,8 +2,8 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from . import *
-import sys
+from . import Path
+from . import DictType
 
 class Base(object):
 
@@ -95,17 +95,18 @@ class ItemBase(Base):
 
 class Root(Base):
     def __init__(self, name, child):
-        child._set_path(Path())
+        child._set_path(Path(name))
         child._parent = self
         Base.__init__(self, {}, child._path)
         self._parent = None
-        self._children = [child]
+        # self._children = [child]
         self._root_name = name
-        self._objects = {}
+        self._objects = {name: child}
 
     @property
     def _child(self):
-        return self._children[0]
+        return self._objects[self._root_name]
+        # return self._children[0]
 
     def __setitem__(self, key, obj):
         self._objects[str(key)] = obj

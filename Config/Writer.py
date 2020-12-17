@@ -6,6 +6,7 @@ from . import Type
 from . import Index
 import json
 import sys
+from pprint import pprint
 
 class Writer(object):
     def __init__(self, root, output=sys.stdout):
@@ -54,10 +55,11 @@ class YamlWriter(Writer):
         return str(value)
 
     def _dump_child(self, obj, level):
-        if obj._path.index!=None:
-            print('%s- ' % (self._indent_str(level)), end='', file=self._output)
-        else:
-            print('%s%s:' % (self._indent_str(level), len(obj._path) and obj._path.name or self._root._root_name), file=self._output)
+        if level>=0:
+            if obj._path.index!=None:
+                print('%s- ' % (self._indent_str(level)), end='', file=self._output)
+            else:
+                print('%s%s:' % (self._indent_str(level), len(obj._path) and obj._path.name or self._root._root_name), file=self._output)
 
     def _dump_param(self, obj, index, param, level):
         if obj._path.index!=None and index==0:
@@ -66,33 +68,43 @@ class YamlWriter(Writer):
             indent = self._indent_str(level)
         print('%s%s: %s' % (indent, param.name, self._escape(param.get_value())), file=self._output)
 
+    def dumps(self, indent=2, skip_root_name=False):
+        self._indent = indent
+        self._dump(self._root._child, skip_root_name and -1 or 0)
 
-class JsonWriter(Writer):
+class ObjectWriter(Writer):
     def __init__(self, root, output=sys.stdout):
         Writer.__init__(self, root, output)
 
     def _dump(self, obj):
-        json = {}
+        objs = {}
         index = 0
         for param in obj._param_values():
-            json[param.name] = param.get_value()
+            objs[param.name] = param.get_value()
             index += 1
         for child in obj._get_children():
             tmp = self._dump(child)
             name = child._path.name
             if isinstance(name, str):
-                json.update(tmp)
+                objs.update(tmp)
             elif isinstance(name, Index):
                 if name.index==0:
-                    json = [tmp]
+                    objs = [tmp]
                 else:
-                    json.append(tmp)
+                    objs.append(tmp)
         if len(obj._path) and not isinstance(obj._path.name, Index):
-            return {obj._path.name: json}
-        return json
+            return {obj._path.name: objs}
+        return objs
 
     def create_object(self):
         return self._dump(self._root._child)
+
+    def dumps(self, indent=2):
+        pprint(self.create_object(), stream=self._output)
+
+class JsonWriter(ObjectWriter):
+    def __init__(self, root, output=sys.stdout):
+        ObjectWriter.__init__(self, root, output)
 
     def dumps(self, indent=2):
         print(json.dumps(self.create_object(), indent=indent), file=self._output)
