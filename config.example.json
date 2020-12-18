@@ -7,81 +7,78 @@
             "enabled": true,
             // default voltage
             "voltage": 5.3,
-            // shunt resistance in milliohm
-            "shunt": 20.0,
-            // raw sensor offset for no current
-            "offset": -16,
-            // calibration for the shunt = real current / displayed current
-            "calibration": 0.994137858
+            "calibration": {
+                // shunt resistance in milliohm
+                "shunt": 20.0,
+                // check the raw sensor values with no load attached and everything warmed up to working temperature
+                // compare if there is a big different between a hot and cold device. a temperature compensation can easily be added
+                // raw sensor offset for no current (Vshunt=0.0000mV)
+                "vshunt_raw_offset": -16,
+                // dividing the shunt equals multiplying the shunt voltage or dividing the current
+                // V = I * (R / Cvbus) == R = (Cvbus * V) / I
+                // multiplier = displayed current / real current
+                "vshunt_multiplier": 0.994137858,
+                // calibration multiplier for bus voltage = real voltage / displayed voltage
+                // bus voltage is load voltage + shunt voltage. makem sure to measure the correct side of the shunt or without any load
+                // multiplier = (load voltage + shunt voltage OR bus voltage) / displayed load voltage
+                "vbus_multiplier": 1.0
+            }
         },
         {
             "name": "Channel 2 (12V)",
             "enabled": true,
             "voltage": 12.0,
-            "shunt": 25.0,
-            "offset": -32,
-            "calibration": 0.985870772
+            "calibration": {
+                "shunt": 25.0,
+                "vshunt_raw_offset": -32,
+                "vshunt_multiplier": 0.985870772,
+                "vbus_multiplier": 1.0
+            }
         },
         {
             "name": "Channel 3 (19V)",
             "enabled": false,
             "voltage": 19.5,
-            "shunt": 50.0
+            "calibration": {
+                "shunt": 50.0
+            }
         }
     ],
-    "app": {
-        // start in full screen mode
+    "gui": {
         "fullscreen": true,
-        // start without GUI
-        "headless": false,
-        // delay in seconds before sending another warning if a limit has been exceeded
-        // the delay is per channel and type of limit
-        "repeat_warning_delay": 300,
-        // command to execute if a limit has been exceeded
-        "warning_command": "logger -t {tag} {message}"
+        "display": ":0.0"
     },
+    // "limits": {
+    //     "repeat_warning_delay": 300,
+    //     "warning_command": "logger -t {tag} {message}"
+    // },
     "plot": {
-        // display Ah or Wh
-        "display_energy": "Ah",
-        // refresh interval in milliseconds
-        "refresh_interval": 650,
-        // refresh interval when the backlight is off or not in fullscreen
-        "idle_refresh_interval": 2500,
-        // max. values to display
-        "max_values": 500,
-        // y axis top margin
-        "main_top_margin": 1.05,
-        // y axis bottom margin
-        "main_bottom_margin": 0,
-        // round y limits to avoid constant resizing
-        "main_current_rounding": 0.25,     // A
-        "main_power_rounding": 3.0,        // W
-        // margins for voltage
-        "voltage_top_margin": 1.003,
-        "voltage_bottom_margin": 0.990
+        "refresh_interval": 250,
+        "idle_refresh_interval": 3000,
+        "max_values": 1000,
+        "max_time": "15min",
+        "line_width": 1.0,
+        "main_top_margin": 5,
+        "main_bottom_margin": 10,
+        "main_current_rounding": 0.25,
+        "main_power_rounding": 3.0,
+        "voltage_top_margin": 0.5,
+        "voltage_bottom_margin": 0.5,
+        "compression": {
+            "uncompressed_time": 60
+        }
     },
     "mqtt": {
-        // name of the device
-        "device_name": "acidpi1",
-        // mqtt server.. leave empty to disable MQTT
-        "host": "192.168.0.3",
-        // MQTT port
+        "host": "localhost",
         "port": 1883,
-        // update interval in seconds
-        "update_interval": 60,
-        // prefix for the topics
+        "update_interval": 30,
         "topic_prefix": "home",
-        // enable assistant auto discovery
         "auto_discovery": true,
-        // home assistant auto discovery
-        "auto_discovery_prefix": "homeassistant"
+        "auto_discovery_prefix": "homeassistant",
     },
     "backlight": {
-        // PIN of the backlight to monitor. 0 to disable
         "gpio": 18
     },
-    "logging": {
-        // enable debug output
-        "verbose": false
-    }
+    "verbose": false,
+    "headless": false
 }

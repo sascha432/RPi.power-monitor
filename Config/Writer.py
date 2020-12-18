@@ -13,6 +13,31 @@ class Writer(object):
         self._root = root
         self._indent = 0
         self._output = output
+        self._config = None
+
+    def _get_value(self, param, path):
+        return param.get_value()
+        # if self._config:
+        #     tmp = self._config
+        #     try:
+        #         for p in path.parts:
+        #             if isinstance(p, Index):
+        #                 if not p.name in tmp:
+        #                     raise StopIteration
+        #                 tmp = tmp[p.name]
+        #                 if not p.index in tmp:
+        #                     raise StopIteration
+        #                 tmp = tmp[p.index]
+        #             else:
+        #                 if not p in tmp:
+        #                     raise StopIteration
+        #                 tmp = tmp[p]
+        #         if param.name in tmp:
+        #             print(path, param)
+        #             return tmp[param.name]
+        #     except StopIteration:
+        #         pass
+        # return param.get_value()
 
     def _indent_str(self, level):
         return ' ' * (level * self._indent)
@@ -24,7 +49,7 @@ class Writer(object):
         print("%spath=%s type=%s parent=%s struct=%s" % (self._indent_str(level), self._path(obj._path), Type.name(obj), Type.name(obj._parent), Type.name(obj._struct)), file=self._output)
 
     def _dump_param(self, obj, index, param, level):
-        print("%spath=%s name=%s param=%s" % (self._indent_str(level), self._path(obj._path + param.name), param.name, param), file=self._output)
+        print("%spath=%s name=%s value=%s param=%s" % (self._indent_str(level), self._path(obj._path + param.name), param.name, self._get_value(param, obj._path), param), file=self._output)
 
     def _dump(self, obj, level):
         self._dump_child(obj, level)
@@ -66,11 +91,11 @@ class YamlWriter(Writer):
             indent = ''
         else:
             indent = self._indent_str(level)
-        print('%s%s: %s' % (indent, param.name, self._escape(param.get_value())), file=self._output)
+        print('%s%s: %s' % (indent, param.name, self._escape(self._get_value(param, obj._path))), file=self._output)
 
     def dumps(self, indent=2, skip_root_name=False):
         self._indent = indent
-        self._dump(self._root._child, skip_root_name and -1 or 0)
+        self._dump(self._root._object, skip_root_name and -1 or 0)
 
 class ObjectWriter(Writer):
     def __init__(self, root, output=sys.stdout):
@@ -80,7 +105,7 @@ class ObjectWriter(Writer):
         objs = {}
         index = 0
         for param in obj._param_values():
-            objs[param.name] = param.get_value()
+            objs[param.name] = self._get_value(param, obj._path)
             index += 1
         for child in obj._get_children():
             tmp = self._dump(child)

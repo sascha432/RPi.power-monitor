@@ -2,7 +2,7 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from Config import (Loader, Merger, DictType, RangeType, Param, JsonReader)
+from Config import (Loader, Merger, DictType, RangeType, Param, JsonReader, YamlWriter, JsonWriter)
 from os import path
 from PowerMonitor import AppConfig
 
@@ -16,7 +16,7 @@ class Config:
     def get_filename(self, file):
         return path.realpath(path.join(self._config_dir, file.format(config_dir=self._config_dir)))
 
-    def load(self, file):
+    def load(self, file, output=None):
 
         loader = Loader('app', AppConfig.App(DictType({
             'channels': AppConfig.ChannelList(RangeType(range(0, 3), AppConfig.Channel, DictType({
@@ -33,7 +33,18 @@ class Config:
 
         reader = JsonReader(loader.root, False)
         config = reader.loads_from(file)
+
+        writer = YamlWriter(loader.root)
+        writer.dumps(skip_root_name=True)
+
         merger = Merger(loader.root)
         merger.merge(config)
+
+        if output=='yaml':
+            writer = YamlWriter(loader.root)
+            writer.dumps(skip_root_name=True)
+        elif output=='json':
+            writer = JsonWriter(loader.root)
+            writer.dumps()
 
         return loader.root_object

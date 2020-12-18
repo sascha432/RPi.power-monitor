@@ -3,10 +3,16 @@
 #
 
 from . import *
+from . import Plot
+from . import Sensor
+from . import Mqtt
+from Config.Type import Type
+from .AppConfig import Channel
 import SDL_Pi_INA3221
+from SDL_Pi_INA3221.Calibration import Calibration
 import time
 import threading
-from threading import Lock
+# from threading import Lock
 import tkinter
 import tkinter as tk
 from tkinter import ttk
@@ -22,10 +28,11 @@ import threading
 import glob
 import hashlib
 import numpy as np
-try:
-    import paho.mqtt.client
-except:
-     paho = False
+import copy
+# try:
+#     import paho.mqtt.client
+# except:
+#      paho = False
 try:
     import pigpio
 except:
@@ -35,9 +42,11 @@ import re
 import traceback
 import signal
 
-class MainAppCli(object):
+class MainAppCli(Plot.Plot):
 
-    def __init__(self, logger, *args, **kwargs):
+    def __init__(self, logger, config, *args, **kwargs):
+
+        Plot.Plot.__init__(self, config)
 
         self.start_time = time.monotonic()
         self.threads = []
@@ -47,11 +56,6 @@ class MainAppCli(object):
         self.gui = False
         self.fullscreen_state = False
         self.logger = logger
-
-        # sensor
-
-        self.ina3221 = SDL_Pi_INA3221.SDL_Pi_INA3221(addr=0x40, avg=SDL_Pi_INA3221.INA3211_CONFIG.AVG_x128, shunt=1)
-        self.lock = Lock()
 
         # init variables
 
@@ -71,11 +75,14 @@ class MainAppCli(object):
 
     def init_vars(self):
 
+        Sensor.Sensor.init_vars(self)
+
         self.channels = Channels()
-        self.ina3221._calibration = ChannelCalibration()
         # zero based list of enabled channels
         # channel names are '1', '2' and '3'
-        for channel in AppConfig.channels:
+
+        for index, channel in AppConfig.channels.items():
+            channel.calibration._update_multipliers()
             if channel.enabled:
                 self.channels.append(channel)
 
@@ -95,7 +102,7 @@ class MainAppCli(object):
 
         self.reset_values()
         self.reset_avg()
-        self.load_energy();
+        self.load_energy()
         self.reset_data()
 
         # with open('data.json','r') as f:
@@ -109,10 +116,12 @@ class MainAppCli(object):
         self.ignore_wakeup_event = 0
         self.backlight_on = False
         self.time_scale_factor = 0
+        self._time_scale_min_time = 5
+        self._time_scale_cur = None
 
     def start(self):
 
-        if MqttConfig.host:
+        if AppConfig.mqtt.host:
             if self.init_mqtt():
                 thread = threading.Thread(target=self.update_mqtt, args=(), daemon=True)
                 thread.start()
@@ -195,92 +204,14 @@ class MainAppCli(object):
                     sleep = 60
             self.terminate.wait(sleep)
 
-    def read_sensor(self):
-        while not self.terminate.is_set():
-            t = time.monotonic()
-            self.data['time'].append(t)
-            for channel in AppConfig.channels:
-
-                busvoltage = self.ina3221.getBusVoltage_V(int(channel))
-                shuntvoltage = self.ina3221.getShuntVoltage_mV(int(channel))
-                current = self.ina3221.getCurrent_mA(int(channel)) / channel.get_shunt_value()
-                loadvoltage = busvoltage - (shuntvoltage / 1000.0)
-                current = current / 1000.0
-                power = (current * busvoltage)
-
-                self.add_stats('sensor', 1)
-
-                self.lock.acquire()
-                try:
-                    ch = int(channel)
-                    self.averages[ch]['n'] += 1
-                    self.averages[ch]['U'] += loadvoltage
-                    self.averages[ch]['I'] += current
-                    self.averages[ch]['P'] += power
-
-                    self.add_stats_minmax('ch%u_U' % ch, loadvoltage)
-                    self.add_stats_minmax('ch%u_I' % ch, current)
-                    self.add_stats_minmax('ch%u_P' % ch, power)
-
-                    if self.energy[ch]['t']==0:
-                        self.energy[ch]['t'] = t
-                    else:
-                        diff = t - self.energy[ch]['t']
-                        # do not add if there is a gap
-                        if diff<1.0:
-                            self.energy[ch]['ei'] += (diff * current / 3600)
-                            self.energy[ch]['ep'] += (diff * power / 3600)
-                        else:
-                            self.logger.error('energy error diff: channel %u: %f' % (ch, diff))
-                        self.energy[ch]['t'] = t
-
-                    self.data[ch].append((current, loadvoltage, power))
-
-                    # self.data[ch].append({'t': t, 'I': current, 'U': loadvoltage, 'P': power })
-
-                    if t>self.energy['stored'] + 60:
-                        self.energy['stored'] = t;
-                        self.store_energy()
-                finally:
-                    self.lock.release()
-
-
-            # start when ready
-            if self.animation_get_state()==self.ANIMATION_READY:
-                self.animation_set_state(pause=False)
-
-            self.terminate.wait(0.1)
-
-
-    def init_mqtt(self):
-        if paho==False:
-            self.logger.error('paho mqtt client not avaiable. MQTT support disabled')
-            return False
-        self.client = paho.mqtt.client.Client(clean_session=True)
-        self.client.on_connect = self.on_connect
-        self.client.on_disconnect = self.on_disconnect
-        if False:
-            self.client.on_log = self.on_log
-        self.client.reconnect_delay_set(min_delay=1, max_delay=30)
-        self.client.will_set(MqttConfig.get_status_topic(), payload=MqttConfig.payload_offline, qos=MqttConfig.qos, retain=True)
-        self.logger.debug("MQTT connect: %s:%u" % (MqttConfig.host, MqttConfig.port))
-        self.client.connect(MqttConfig.host, port=MqttConfig.port, keepalive=MqttConfig.keepalive)
-        self.client.loop_start();
-        return True
-
-    def end_mqtt(self):
-        if self.mqtt_connected:
-            self.client.disconnect(True)
-            self.mqtt_connected = False
-
     def create_hass_auto_conf(self, entity, channel, unit, value_json_name, mac_addresses):
 
         m = hashlib.md5()
-        m.update((':'.join([MqttConfig.device_name, MqttConfig._model, MqttConfig._manufacturer, str(channel), entity, value_json_name])).encode())
+        m.update((':'.join([AppConfig.mqtt.device_name, AppConfig.mqtt.MODEL, AppConfig.mqtt.MANUFACTURER, str(channel), entity, value_json_name])).encode())
         unique_id = m.digest().hex()[0:11]
 
         m = hashlib.md5()
-        m.update((':'.join([MqttConfig.device_name, MqttConfig._model, MqttConfig._manufacturer, entity, value_json_name])).encode())
+        m.update((':'.join([AppConfig.mqtt.device_name, AppConfig.mqtt.MODEL, AppConfig.mqtt.MANUFACTURER, entity, value_json_name])).encode())
         device_unique_id = m.digest().hex()[0:11]
 
         connections = []
@@ -288,41 +219,41 @@ class MainAppCli(object):
             connections.append(["mac", mac_addr])
 
         return json.dumps({
-            'name': '%s-%s-ch%u-%s' % (MqttConfig.device_name, MqttConfig.sensor_name, channel, entity),
+            'name': '%s-%s-ch%u-%s' % (AppConfig.mqtt.device_name, AppConfig.mqtt.sensor_name, channel, entity),
             'platform': 'mqtt',
             'unique_id': unique_id,
             'device': {
-                'name': '%s-%s-%s' % (MqttConfig.device_name, MqttConfig.sensor_name, device_unique_id[0:4]),
+                'name': '%s-%s-%s' % (AppConfig.mqtt.device_name, AppConfig.mqtt.sensor_name, device_unique_id[0:4]),
                 'identifiers': [ device_unique_id, '947bc81af46aa573a62ccefadb9c9a7aef6d1c1e' ],
                 'connections': connections,
-                'model': MqttConfig._model,
-                'sw_version': MqttConfig.VERSION,
-                'manufacturer': MqttConfig._manufacturer
+                'model': AppConfig.mqtt.MODEL,
+                'sw_version': AppConfig.VERSION,
+                'manufacturer': AppConfig.mqtt.MANUFACTURER
             },
-            'availability_topic': MqttConfig.get_status_topic(),
-            'payload_available': MqttConfig.payload_online,
-            'payload_not_available': MqttConfig.payload_offline,
-            'state_topic': MqttConfig.get_channel_topic(channel),
+            'availability_topic': AppConfig.mqtt.get_status_topic(),
+            'payload_available': AppConfig.mqtt.payload_online,
+            'payload_not_available': AppConfig.mqtt.payload_offline,
+            'state_topic': AppConfig.mqtt.get_channel_topic(channel),
             'unit_of_measurement': unit,
             'value_template': '{{ value_json.%s }}' % value_json_name
         }, ensure_ascii=False, indent=None, separators=(',', ':'))
 
 
     def mqtt_publish_auto_discovery(self):
-        mac_addresses = tools.get_mac_addresses()
+        mac_addresses = Tools.get_mac_addresses()
 
-        for entity, unit in MqttConfig._aggregated:
+        for entity, unit in AppConfig.mqtt.AGGREGATED:
             payload = self.create_hass_auto_conf(entity, 0, unit, entity, mac_addresses)
-            topic = MqttConfig.get_auto_discovery_topic(0, entity)
+            topic = AppConfig.mqtt.get_auto_discovery_topic(0, entity)
             self.logger.debug('MQTT auto discovery %s: %s' % (topic, payload))
-            self.client.publish(topic, payload=payload, qos=MqttConfig.qos, retain=True)
+            self.client.publish(topic, payload=payload, qos=AppConfig.mqtt.qos, retain=True)
 
         for channel in self.channels:
-            for entity, unit in MqttConfig._entities.items():
-                payload = self.create_hass_auto_conf(entity, channel.num(), unit, entity, mac_addresses)
-                topic = MqttConfig.get_auto_discovery_topic(channel.num(), entity)
+            for entity, unit in AppConfig.mqtt.ENTITIES.items():
+                payload = self.create_hass_auto_conf(entity, channel.number, unit, entity, mac_addresses)
+                topic = AppConfig.mqtt.get_auto_discovery_topic(channel.number, entity)
                 self.logger.debug('MQTT auto discovery %s: %s' % (topic, payload))
-                self.client.publish(topic, payload=payload, qos=MqttConfig.qos, retain=True)
+                self.client.publish(topic, payload=payload, qos=AppConfig.mqtt.qos, retain=True)
 
     def on_log(self, client, userdata, level, buf):
         self.logger.debug('%s: %s' % (level, buf))
@@ -334,8 +265,8 @@ class MainAppCli(object):
             self.add_stats('mqtt_con', 1)
             try:
                 self.mqtt_connected = True
-                self.client.publish(MqttConfig.get_status_topic(), MqttConfig.payload_online, qos=MqttConfig.qos, retain=True)
-                if MqttConfig.auto_discovery:
+                self.client.publish(AppConfig.mqtt.get_status_topic(), AppConfig.mqtt.payload_online, qos=AppConfig.mqtt.qos, retain=True)
+                if AppConfig.mqtt.auto_discovery:
                     self.mqtt_publish_auto_discovery()
             except Exception as e:
                 self.logger.error('MQTT error: %s: reconnecting...' % e)
@@ -400,18 +331,18 @@ class MainAppCli(object):
                             sum_data['E'] += tmp2[n]['ep']
                             sum_data['P'] += P
 
-                            topic = MqttConfig.get_channel_topic(n + 1)
+                            topic = AppConfig.mqtt.get_channel_topic(n + 1)
                             self.logger.debug("MQTT publish %s: %s" % (topic, payload))
-                            self.client.publish(topic, payload=payload, qos=MqttConfig.qos, retain=True)
+                            self.client.publish(topic, payload=payload, qos=AppConfig.mqtt.qos, retain=True)
 
 
                     payload = json.dumps({
                         'P': self.format_float_precision(sum_data['P']),
                         'E': self.format_float_precision(sum_data['E'] / 1000, kwh_precision),  # E is Wh, we send kWh
                     })
-                    topic = MqttConfig.get_channel_topic(0)
+                    topic = AppConfig.mqtt.get_channel_topic(0)
                     self.logger.debug("MQTT publish %s: %s" % (topic, payload))
-                    self.client.publish(topic, payload=payload, qos=MqttConfig.qos, retain=True)
+                    self.client.publish(topic, payload=payload, qos=AppConfig.mqtt.qos, retain=True)
 
                     self.add_stats('mqtt_pub', 1)
 
@@ -420,7 +351,7 @@ class MainAppCli(object):
                     AppConfig._debug_exception(e)
                     self.client.reconnect()
 
-            self.terminate.wait(MqttConfig.update_interval)
+            self.terminate.wait(AppConfig.mqtt.update_interval)
 
     def reset_data(self):
         self.data = {'time': [], 0: [], 1: [], 2: []}
@@ -452,19 +383,21 @@ class MainAppCli(object):
 
     def reset_values(self):
 
-        self.stats = {}
-
-        self.start_time = time.monotonic()
-        self.compressed_ts = -1
-        self.compressed_min_records = 0
-        self.plot_updated = 0
-        self.plot_updated_times = []
-        self.y_limits = {}
-        for i in range(0, 5):
-            self.clear_y_limits(i)
-        self.power_sum = [ 1 ]
-        self.values = PlotValuesContainer(self.channels)
-
+        self.lock.acquire()
+        try:
+            self.stats = {}
+            self.start_time = time.monotonic()
+            self.compressed_ts = -1
+            self.compressed_min_records = 0
+            self.plot_updated = 0
+            self.plot_updated_times = []
+            self.y_limits = {}
+            for i in range(0, 5):
+                self.clear_y_limits(i)
+            self.power_sum = [ 1 ]
+            self.values = PlotValuesContainer(self.channels)
+        finally:
+            self.lock.release()
 
     def reset_avg(self):
         self.averages = {
@@ -482,49 +415,42 @@ class MainAppCli(object):
         }
 
     def load_energy(self):
+        print(AppConfig.get_filename(AppConfig.energy_storage_file))
         try:
-
-            with open(AppConfig.get_config_filename(AppConfig.energy_storage), 'r') as f:
+            with open(AppConfig.get_filename(AppConfig.energy_storage_file), 'r') as f:
                 tmp = json.loads(f.read())
+                print(tmp)
                 self.reset_energy()
                 for channel in self.channels:
-                    e = self.energy[int(channel)]
-                    try:
-                        t = tmp[int(channel)]
-                    except:
-                        t = tmp[channel.__repr__()]
-                    e['ei'] = float(t['ei']);
-                    e['ep'] = float(t['ep']);
+                    ch = int(channel)
+                    t = tmp[str(ch)]
+                    self.energy[ch]['t'] = 0
+                    self.energy[ch]['ei'] = float(t['ei'])
+                    self.energy[ch]['ep'] = float(t['ep'])
         except Exception as e:
+            AppConfig._debug_exception(e)
             self.logger.error("failed to load energy: %s" % e)
             self.reset_energy()
 
     def store_energy(self):
         try:
-            with open(AppConfig.get_config_filename(AppConfig.energy_storage), 'w') as f:
-                tmp = self.energy.copy()
+            self.logger.debug('store energy')
+            with open(AppConfig.get_filename(AppConfig.energy_storage_file), 'w') as f:
+                tmp = copy.deepcopy(self.energy)
                 for channel in self.channels:
-                    tmp[int(channel)]['t'] = 0;
+                    ch = int(channel)
+                    del tmp[ch]['t']
                 f.write(json.dumps(tmp))
         except Exception as e:
             self.logger.error("failed to store energy: %s" % e)
 
 class MainApp(MainAppCli, tk.Tk):
 
-    MAIN_PLOT_CURRENT = 0
-    MAIN_PLOT_POWER = 1
-    MAIN_PLOT_POWER_SUM = 2
+    def __init__(self, logger, config):
+        global AppConfig
+        AppConfig = config
 
-    ANIMATION_RUNNING = True
-    ANIMATION_INIT = 1                      # waiting for the first callback
-    ANIMATION_READY = 0xffffa               # ready, animation is stopped
-    ANIMATION_PAUSED = 0xffffb              # animation stopped has been paused
-    ANIMATION_STATES = (ANIMATION_INIT, ANIMATION_READY, ANIMATION_PAUSED)
-
-
-    def __init__(self, logger):
-
-        MainAppCli.__init__(self, logger)
+        MainAppCli.__init__(self, logger, config)
 
         if AppConfig.headless:
             self.logger.debug('starting headless')
@@ -541,7 +467,10 @@ class MainApp(MainAppCli, tk.Tk):
 
 
     def report_callback_exception(self, exc, val, tb):
-        AppConfig._debug_exception(traceback.format_exception(exc, val, tb))
+        if 'shape mismatch' in str(exc):
+            self.reset_values()
+        else:
+            AppConfig._debug_exception(traceback.format_exception(exc, val, tb))
 
     def __init_gui__(self):
 
@@ -579,10 +508,12 @@ class MainApp(MainAppCli, tk.Tk):
 
         self.plot_visibility_state = 0
         ax = self.fig.add_subplot(self.get_plot_geometry(0), facecolor=self.PLOT_BG)
+        ax.autoscale(False)
+        ax.margins(0.01, 0.01)
         self.ax.append(ax)
 
         for channel in self.channels:
-            n = self.get_plot_geometry(channel.num())
+            n = self.get_plot_geometry(channel.number)
             self.ax.append(self.fig.add_subplot(n, facecolor=self.PLOT_BG))
 
         for ax in self.ax:
@@ -603,19 +534,23 @@ class MainApp(MainAppCli, tk.Tk):
         self.ax[0].tick_params(**ticks_params)
 
         for channel in self.channels:
-            ax = self.ax[channel.num()]
+            ax = self.ax[channel.number]
             ax.ticklabel_format(axis='y', style='plain', scilimits=(0, 0), useOffset=False)
             ax.tick_params(**ticks_params)
 
         # lines
 
-        self.main_plot_index = self.MAIN_PLOT_CURRENT
+        self.main_plot_index = MAIN_PLOT.CURRENT
         self.set_main_plot()
 
         for channel in self.channels:
-            ax = self.ax[channel.num()]
-            line, = ax.plot(self.values.time(), self.values[channel].voltage(), color=channel.color_for('U'), label=channel.name + ' U', linewidth=2)
+            ax = self.ax[channel.number]
+            line, = ax.plot(self.values.time(), self.values[channel].voltage(), color=channel._color_for('U'), label=channel.name + ' U', linewidth=2)
             self.lines[1].append(line)
+
+
+
+        self.legend()
 
         # top labels
 
@@ -645,7 +580,7 @@ class MainApp(MainAppCli, tk.Tk):
 
         gui = {}
         try:
-            with open(AppConfig.get_config_filename(self.get_gui_config_filename()), 'r') as f:
+            with open(AppConfig.get_filename(self.get_gui_config_filename()), 'r') as f:
                 gui = json.loads(f.read())
         except Exception as e:
             self.logger.debug('failed to write GUI config: %s' % e)
@@ -670,7 +605,7 @@ class MainApp(MainAppCli, tk.Tk):
 
         self.ani_interval = AppConfig.plot.refresh_interval
         self.canvas.get_tk_widget().place(in_=top, **plot_placement)
-        self.ani = animation.FuncAnimation(self.fig, self.plot_values, interval=self.ANIMATION_INIT)
+        self.ani = animation.FuncAnimation(self.fig, self.plot_values, interval=ANIMATION.INIT)
 
         # label placement for the enabled channels
         if 'label_places' in gui:
@@ -733,21 +668,30 @@ class MainApp(MainAppCli, tk.Tk):
             label.place(in_=frame, **places.pop(0))
             self.labels[ch]['e'] = label
 
+        frame = tk.Frame(self, bg='#999999')
+        frame.pack()
+        frame.place(in_=top, relx=0.5, rely=2.0, relwidth=0.75, relheight=0.25, anchor='center')
+        self.popup_frame = frame
+        label = tk.Label(self, text="", font=('Verdana', 32), bg='#999999', fg='#ffffff', anchor='center')
+        label.pack(in_=self.popup_frame, fill=tkinter.BOTH, expand=True)
+        self.popup_label = label
+        self.popup_hide_timeout = None
+
         if AppConfig._debug:
             label = tk.Label(self, text="", font=('Verdana', 12), bg='#333333', fg=self.TEXT_COLOR, anchor='nw', wraplength=800)
             label.pack()
-            label.place(in_=top, relx=0.0, rely=1.0-0.135, relwidth=1.0, relheight=0.13)
+            label.place(in_=top, relx=0.0, rely=1.0-0.135 + 2.0, relwidth=1.0, relheight=0.13)
             self.debug_label = label
-            self.debug_label_state = 0
+            self.debug_label_state = 2
 
 
         try:
-            with open(AppConfig.get_config_filename(self.get_gui_config_filename(True)), 'w') as f:
+            with open(AppConfig.get_filename(self.get_gui_config_filename(True)), 'w') as f:
                 f.write(json.dumps(gui, indent=2))
         except Exception as e:
             self.logger.debug('failed to write GUI config: %s' % e)
 
-        if AppConfig.fullscreen:
+        if AppConfig.gui.fullscreen:
             self.attributes('-zoomed', True)
             self.toggle_fullscreen()
 
@@ -756,9 +700,10 @@ class MainApp(MainAppCli, tk.Tk):
             self.bind("<Leave>", self.wake_up)
             self.bind("<Motion>", self.wake_up)
 
-        self.canvas.get_tk_widget().bind('<Button-1>', self.toggle_time_scale)
+        self.canvas.get_tk_widget().bind('<Button-1>', self.button_1)
 
         self.bind("<Control-t>", self.store_values)
+        self.bind("<F1>", lambda a: self.reset_values())
         self.bind("<F2>", self.toggle_plot)
         self.bind("<F3>", self.toggle_main_plot)
         self.bind("<F4>", self.toggle_display_energy)
@@ -767,19 +712,6 @@ class MainApp(MainAppCli, tk.Tk):
         self.bind("<F10>", self.toggle_debug)
         self.bind("<F11>", self.toggle_fullscreen)
         self.bind("<Escape>", self.end_fullscreen)
-
-    def get_plot_geometry(self, plot_number):
-        if plot_number==0:
-            if self.plot_visibility_state==0:
-                return 121
-            elif self.plot_visibility_state==2:
-                return 111
-        else:
-            if self.plot_visibility_state==0:
-                return (len(self.channels) * 100) + 20 + (plot_number * 2)
-            if self.plot_visibility_state==1:
-                return 100 + (len(self.channels) * 10) + (plot_number)
-        return None
 
     def destroy(self):
         MainAppCli.destroy(self)
@@ -843,6 +775,7 @@ class MainApp(MainAppCli, tk.Tk):
                 self.FG_CHANNEL2 = 'blue'
                 self.FG_CHANNEL3 = 'aqua'
 
+        Channel.COLOR_AGGREGATED_POWED = self.FG_CHANNEL0
         AppConfig.channels[0].color = self.FG_CHANNEL1
         AppConfig.channels[1].color = self.FG_CHANNEL2
         AppConfig.channels[2].color = self.FG_CHANNEL3
@@ -869,7 +802,7 @@ class MainApp(MainAppCli, tk.Tk):
                 if is_running:
                     self.logger.debug('stopping animation')
                     self.ani.event_source.stop()
-                self.ani.event_source.interval = self.ANIMATION_PAUSED
+                self.ani.event_source.interval = ANIMATION.PAUSED
             else:
                 if interval!=None:
                     self.ani_interval = interval
@@ -881,12 +814,12 @@ class MainApp(MainAppCli, tk.Tk):
             self.lock.release()
 
     def animation_get_state(self):
-        if self.ani.event_source.interval in self.ANIMATION_STATES:
+        if self.ani.event_source.interval in ANIMATION.STATES:
             return self.ani.event_source.interval
-        return self.ANIMATION_RUNNING
+        return ANIMATION.RUNNING
 
     def animation_is_running(self):
-        return not self.ani.event_source.interval in self.ANIMATION_STATES
+        return not self.ani.event_source.interval in ANIMATION.STATES
 
     def animation_compare_interval(self, interval):
         return self.animation_is_running() and self.ani_interval==interval
@@ -928,7 +861,7 @@ class MainApp(MainAppCli, tk.Tk):
 
     def reload_gui(self, event=None):
         try:
-            with open(AppConfig.get_config_filename(self.get_gui_config_filename()), 'r') as f:
+            with open(AppConfig.get_filename(self.get_gui_config_filename()), 'r') as f:
                 gui = json.loads(f.read())
 
             self.canvas.get_tk_widget().place(**gui['plot_placement'])
@@ -952,16 +885,40 @@ class MainApp(MainAppCli, tk.Tk):
             self.logger.error('Reloading configuration failed: %s' % e)
         return "break"
 
+    def button_1(self, event):
+
+        x = int(event.x / (self.geometry_info[0] / 3))
+        y = int(event.y / (self.geometry_info[1] / 2))
+
+
+        self.logger.debug('button1 %u:%u' % (x, y))
+
+        if x==0:
+            self.toggle_plot()
+        elif x==1:
+            self.toggle_time_scale()
+        else:
+            self.toggle_main_plot()
+
     def toggle_time_scale(self, event=None):
+        num = self.get_time_scale_num()
         self.time_scale_factor += 1
-        self.time_scale_factor %= 10
-        self.logger.debug('time scale=%u' % self.get_time_scale())
+        self.time_scale_factor %= num
+        n = self.get_time_scale(num)
+        self.legend()
+        self.show_popup('%u of %u seconds (%u/%u)' % (n, AppConfig.plot.max_time, self.time_scale_factor + 1, num))
+        # self.logger.debug('time scale=%u' % self.get_time_scale(True))
         return "break"
 
-    def get_time_scale(self):
-        if self.time_scale_factor==0:
-            return AppConfig.plot.max_time * 2;
-        return round(AppConfig.plot.max_time / self.time_scale_factor)
+
+    def show_popup(self, msg, timeout=5):
+        if msg==None:
+            self.popup_hide_timeout = None
+            self.popup_frame.place(rely=2.0)
+        else:
+            self.popup_hide_timeout = time.monotonic() + timeout
+            self.popup_label.configure(text=msg)
+            self.popup_frame.place(rely=0.28)
 
     def store_values(self, event=None):
         fn = 'data-%u.json' % int(time.monotonic())
@@ -985,12 +942,12 @@ class MainApp(MainAppCli, tk.Tk):
         return "break"
 
     def wake_up(self, event=None):
-        if MqttConfig.motion_payload!='' and self.backlight_on==False and self.mqtt_connected:
+        if AppConfig.mqtt.motion_payload!='' and self.backlight_on==False and self.mqtt_connected:
             t = time.monotonic()
             if t>self.ignore_wakeup_event:
                 self.logger.debug('MQTT wake up event')
-                self.client.publish(MqttConfig.get_motion_topic(t), payload=MqttConfig.motion_payload, qos=MqttConfig.qos, retain=MqttConfig.motion_retain)
-                self.ignore_wakeup_event = time.monotonic() + MqttConfig.motion_repeat_delay
+                self.client.publish(AppConfig.mqtt.get_motion_topic(t), payload=AppConfig.mqtt.motion_payload, qos=AppConfig.mqtt.qos, retain=AppConfig.mqtt.motion_retain)
+                self.ignore_wakeup_event = time.monotonic() + AppConfig.mqtt.motion_repeat_delay
                 self.set_screen_update_rate(self.fullscreen_state)
         return "break"
 
@@ -1026,24 +983,22 @@ class MainApp(MainAppCli, tk.Tk):
         return 'break'
 
     def toggle_display_energy(self, event=None):
-        if self.display_energy==AppConfig.DISPLAY_ENERGY_AH:
-            self.display_energy=AppConfig.DISPLAY_ENERGY_WH
+        if self.display_energy==DISPLAY_ENERGY.AH:
+            self.display_energy=DISPLAY_ENERGY.WH
         else:
-            self.display_energy=AppConfig.DISPLAY_ENERGY_AH
+            self.display_energy=DISPLAY_ENERGY.AH
         return 'break'
 
     def get_plot_values(self, axis, channel):
         if axis==0:
-            if self.main_plot_index==self.MAIN_PLOT_CURRENT:
+            if self.main_plot_index==MAIN_PLOT.CURRENT:
                 return (self.values.time(), self.values[channel], self.values[channel].current())
-            elif self.main_plot_index==self.MAIN_PLOT_POWER:
+            elif self.main_plot_index==MAIN_PLOT.POWER:
                 return (self.values.time(), self.values[channel], self.values[channel].power())
-            elif self.main_plot_index==self.MAIN_PLOT_POWER_SUM:
+            elif self.main_plot_index==MAIN_PLOT.AGGREGATED_POWER:
                 tidx = self.values.time()
-                if len(self.power_sum)!=len(tidx):
-                    self.power_sum = []
-                    for i in range(0, tidx):
-                        self.power_sum.append(0)
+                # if len(self.power_sum)!=len(tidx):
+                #     self.power_sum = np.zeros(tidx)
                 return (tidx, self.values[0], self.power_sum)
         elif axis==1:
             return (self.values.time(), self.values[channel], self.values[channel].voltage())
@@ -1051,9 +1006,9 @@ class MainApp(MainAppCli, tk.Tk):
 
     def get_plot_line(self, axis, channel):
         if axis==0:
-            if self.main_plot_index==self.MAIN_PLOT_CURRENT or self.main_plot_index==self.MAIN_PLOT_POWER:
+            if self.main_plot_index==MAIN_PLOT.CURRENT or self.main_plot_index==MAIN_PLOT.POWER:
                 return self.lines[0][channel]
-            elif self.main_plot_index==self.MAIN_PLOT_POWER_SUM:
+            elif self.main_plot_index==MAIN_PLOT.AGGREGATED_POWER:
                 return self.lines[0][0]
         elif axis==1:
             return self.lines[1][channel]
@@ -1065,19 +1020,19 @@ class MainApp(MainAppCli, tk.Tk):
         try:
             self.power_sum = []
             self.clear_y_limits(0)
-            if self.main_plot_index==self.MAIN_PLOT_CURRENT:
+            if self.main_plot_index==MAIN_PLOT.CURRENT:
                 values_type = 'I'
                 x_range, values, items = self.get_plot_values(0, 0)
                 self.plot_main_current_rounding = AppConfig.plot.main_current_rounding
                 self.ax[0].set_ylabel('Current (A)', color=self.PLOT_TEXT, **self.PLOT_FONT)
-            elif self.main_plot_index==self.MAIN_PLOT_POWER:
+            elif self.main_plot_index==MAIN_PLOT.POWER:
                 values_type = 'P'
                 x_range, values, items = self.get_plot_values(0, 1)
                 self.plot_main_current_rounding = AppConfig.plot.main_current_rounding
                 self.ax[0].set_ylabel('Power (W)', color=self.PLOT_TEXT, **self.PLOT_FONT)
-            elif self.main_plot_index==self.MAIN_PLOT_POWER_SUM:
+            elif self.main_plot_index==MAIN_PLOT.AGGREGATED_POWER:
                 values_type = 'Psum'
-                x_range, values, items = self.get_plot_values(0, 0)
+                x_range, values, items = self.get_plot_values(0, 2)
                 self.plot_main_current_rounding = AppConfig.plot.main_power_rounding
                 self.ax[0].set_ylabel('Aggregated Power (W)', color=self.PLOT_TEXT, **self.PLOT_FONT)
 
@@ -1086,15 +1041,28 @@ class MainApp(MainAppCli, tk.Tk):
                 line.remove()
 
             if self.main_plot_index==4:
-                line, = self.ax[0].plot(x_range, values, color=channel.color_for(values_type), label='Power', linewidth=AppConfig.plot.line_width)
+                line, = self.ax[0].plot(x_range, values, color=channel._color_for(values_type), label='Power', linewidth=AppConfig.plot.line_width)
                 self.lines[0].append(line)
             else:
                 for channel in self.channels:
-                    line, = self.ax[0].plot(self.values.time(), self.values[channel].voltage(), color=channel.color_for(values_type), label='%s %s' % (channel.name, type), linewidth=AppConfig.plot.line_width)
+                    line, = self.ax[0].plot(self.values.time(), self.values[channel].voltage(), color=channel._color_for(values_type), label=channel.name, linewidth=AppConfig.plot.line_width)
                     self.lines[0].append(line)
+
+            self.add_ticks()
 
         finally:
             self.lock.release()
+
+    # def plot_update_y_ticks_primary(self, y, pos):
+    #     yl = self.y_limits[0]
+    #     if 'y_max' in yl and yl['y_max']<2.0:
+    #         diff = yl['y_max'] - yl['y_min']
+    #         if diff<1.0:
+    #             return '%d' % (int(y * 1000))
+    #     return '%.2f' % y
+
+    # def plot_update_y_ticks_secondary(self, y, pos):
+    #     return '%.2f' % y
 
     def _debug_validate_length(self):
         if AppConfig._debug:
@@ -1103,6 +1071,20 @@ class MainApp(MainAppCli, tk.Tk):
                 lens.append(len(items))
             if sum(lens)/len(lens)!=lens[0]:
                 raise RuntimeError('array length mismatch: %s' % (lens))
+
+    def min_max_downsample_v3(self, x, y, pts_per_bin): #num_bins):
+        # pts_per_bin = x.size // num_bins
+        num_bins = x.size // pts_per_bin
+
+        x_view = x.reshape(num_bins, pts_per_bin)
+        y_view = y.reshape(num_bins, pts_per_bin)
+        i_min = np.argmin(y_view, axis=1)
+        i_max = np.argmax(y_view, axis=1)
+
+        r_index = np.repeat(np.arange(num_bins), 2)
+        c_index = np.sort(np.stack((i_min, i_max), axis=1)).ravel()
+
+        return x_view[r_index, c_index], y_view[r_index, c_index]
 
     def compress_values(self):
 
@@ -1119,12 +1101,12 @@ class MainApp(MainAppCli, tk.Tk):
                     self.values.set_items(type, ch, items[idx + 1:])
 
             # compress data
-            if self.compressed_min_records>AppConfig.compression_min_records:
+            if self.compressed_min_records>AppConfig.plot.compression.min_records:
                 start_idx = self.values.find_time_index(self.compressed_ts, True)
                 if start_idx!=None:
-                    end_idx = self.values.find_time_index(AppConfig.compression_uncompressed_time)
+                    end_idx = self.values.find_time_index(AppConfig.plot.compression.uncompressed_time)
                     if end_idx!=None:
-                        values_per_second = int(AppConfig.plot.max_values / float(AppConfig.plot.max_time)) + 1
+                        values_per_second = AppConfig.plot.max_values / float(AppConfig.plot.max_time)
 
                         count = end_idx - start_idx
                         timeframe = self.values.timeframe(start_idx, end_idx)
@@ -1132,9 +1114,9 @@ class MainApp(MainAppCli, tk.Tk):
                         if groups:
                             # split data into groups of group_size
                             group_size = int(count / groups)
-                            if group_size>1:
+                            if group_size>=4:
                                 n = count / group_size
-                                if n>4 or count>32:
+                                if n>4 or count>group_size:
                                     # find even count
                                     while count % group_size != 0:
                                         count -= 1
@@ -1148,12 +1130,20 @@ class MainApp(MainAppCli, tk.Tk):
                                     self.compressed_ts = self.values.time()[end_idx]
                                     self.compressed_min_records = 0
 
+                                    before = len(self.values._t)
+
                                     tmp1 = len(self.values.time()) - end_idx
                                     tmp2 = self.values.timeframe(end_idx)
                                     tmp3 = tmp1 / tmp2
                                     tmp4 = 'tf=%.3fs items/s=%.2f num=%u' % (tmp2, tmp3, tmp1)
 
                                     # self._debug_validate_length()
+
+                                    # for type, ch, items in self.values.all():
+                                    #     items2 = np.array_split(items, [start_idx, end_idx])
+                                    #     print('%s:%u %u,%u,%u %u %.3f' % (type, ch, len(items2[0]), len(items2[1]), len(items2[2]), len(items), len(items2[1]) / group_size))
+
+                                    time_items = []
 
                                     # split array into 3 array and one of them into groups and generate mean values for each group concatenation the flattened result
                                     for type, ch, items in self.values.all():
@@ -1162,7 +1152,18 @@ class MainApp(MainAppCli, tk.Tk):
                                         self.add_stats('ud', len(items))
 
                                         items = np.array_split(items, [start_idx, end_idx])
-                                        items[1] = np.array(items[1]).reshape(-1, group_size).mean(axis=0)
+
+                                        if type=='t':
+                                            time_items = np.array(items[1])
+                                        items[1] = np.array(items[1][:])
+
+                                        # min_val = min(items[1])
+                                        # max_val = max(items[1])
+
+                                        x, items[1] = self.min_max_downsample_v3(time_items, items[1], group_size)
+
+                                        # items[1] = np.array(items[1]).reshape(-1, group_size).mean(axis=0)
+
                                         tmp = np.concatenate(np.array(items, dtype=object).flatten()).tolist()
                                         self.values.set_items(type, ch, tmp)
 
@@ -1170,9 +1171,16 @@ class MainApp(MainAppCli, tk.Tk):
 
                                     # self._debug_validate_length()
 
-                                    # print('%s total=%u count=%u compressed=%u ratio=%.2f diff_t=%.2fs' % (tmp4, len(self.values.time()), count, len(tmp), count / len(tmp), diff_t))
+                                    # for type, ch, items in self.values.all():
+                                    #     print('%s:%u %u' % (type, ch, len(items)))
+
 
                                     diff = time.monotonic() - t
+                                    # print('%s total=%u count=%u compressed=%u ratio=%.2f diff_t=%.2fs t=%.4f' % (tmp4, len(self.values.time()), count, len(tmp), count / len(tmp), diff_t, diff))
+
+                                    after = len(self.values._t)
+                                    print('before=%u after=%d t=%.4f' % (before, after, diff))
+
                                     self.add_stats('cc', 1)
                                     self.add_stats('ct', len(tmp))
         except Exception as e:
@@ -1223,12 +1231,12 @@ class MainApp(MainAppCli, tk.Tk):
     def plot_values(self, i):
 
         if i<=1:
-            if self.ani.event_source.interval==self.ANIMATION_INIT:
+            if self.ani.event_source.interval==ANIMATION.INIT:
                 # stop animation after initializing
                 # the first sensor data will start it
                 self.logger.debug('animation ready...')
                 self.ani.event_source.stop()
-                self.ani.event_source.interval = self.ANIMATION_READY
+                self.ani.event_source.interval = ANIMATION.READY
             return
 
         try:
@@ -1239,48 +1247,60 @@ class MainApp(MainAppCli, tk.Tk):
 
             self.plot_count_fps()
 
-            self.power_sum = []
-            x_max = 0
+            ts = time.monotonic()
+            display_idx = 0
+            x_max = None
+            x_min = -self.get_time_scale()
             y_max = 0
             y_min = sys.maxsize
+
+            if self.main_plot_index==MAIN_PLOT.AGGREGATED_POWER:
+                tmp = []
+                for channel in self.channels:
+                    ch = int(channel)
+                    tmp.append(self.values[ch].power())
+                self.power_sum = np.array(tmp).sum(axis=0)
+
             for channel in self.channels:
                 ch = int(channel)
 
                 # axis 0
                 line = self.get_plot_line(0, ch)
                 x_range, values, items = self.get_plot_values(0, ch)
-                x_max = self.values.max_time()
+                if x_max==None:
+                    x_max = self.values.max_time()
+                    x_min = x_max - self.get_time_scale()
+                    display_idx = self.values.find_time_index(x_min, True)
 
                 # top labels
                 self.labels[ch]['U'].configure(text=fmt.format(values.avg_U(), 'V'))
                 self.labels[ch]['I'].configure(text=fmt.format(values.avg_I(), 'A'))
                 self.labels[ch]['P'].configure(text=fmt.format(values.avg_P(), 'W'))
-                tmp = self.display_energy==AppConfig.DISPLAY_ENERGY_AH and ('ei', 'Ah') or ('ep', 'Wh')
+                tmp = self.display_energy==DISPLAY_ENERGY.AH and ('ei', 'Ah') or ('ep', 'Wh')
                 self.labels[ch]['e'].configure(text=fmt.format(self.energy[ch][tmp[0]], tmp[1]))
 
                 # axis 1
-                if self.main_plot_index==4:
-                    self.power_sum.append(values.P)
-                else:
-                    # max. for all lines
-                    y_max = max(y_max, max(items))
-                    y_min = min(y_min, min(items))
-                    line.set_data(x_range, items)
-                    x_range, values, items = self.get_plot_values(1, ch)
-                    line = self.get_plot_line(1, ch)
-                    line.set_data(x_range, items)
+                # if self.main_plot_index!=MAIN_PLOT.AGGREGATED_POWER:
+                # max. for all lines
+                y_max = max(y_max, max(items[display_idx:]))
+                y_min = min(y_min, min(items[display_idx:]))
+                line.set_data(x_range, items)
+
+                x_range, values, items = self.get_plot_values(1, ch)
+                line = self.get_plot_line(1, ch)
+                line.set_data(x_range, items)
 
                 # max. per channel
-                y_max1 = max(fround(values.max_U() * AppConfig.plot.voltage_top_margin, 2), channel.voltage + 0.02)
-                y_min1 = min(fround(values.min_U() * AppConfig.plot.voltage_bottom_margin, 2), channel.voltage - 0.02)
-                self.ax[channel.num()].set_ylim(top=y_max1, bottom=y_min1)
+                y_max1 = max(Tools.fround(values.max_U(display_idx) * AppConfig.plot.voltage_top_margin, 2), channel.voltage + 0.02)
+                y_min1 = min(Tools.fround(values.min_U(display_idx) * AppConfig.plot.voltage_bottom_margin, 2), channel.voltage - 0.02)
+                self.ax[channel.number].set_ylim(top=y_max1, bottom=y_min1)
 
 
-            # axis 0 power sum
-            if self.main_plot_index==4:
-                self.power_sum = [sum(x) for x in zip(*power_sum)]
-                y_max = max(self.power_sum)
-                self.get_plot_line(0, 0).set_data(x_range, power_sum);
+            # # axis 0 power sum
+            # if self.main_plot_index==4:
+            #     self.power_sum = [sum(x) for x in zip(*power_sum)]
+            #     y_max = max(self.power_sum)
+            #     self.get_plot_line(0, 0).set_data(x_range, power_sum);
                 # self.lines[0][0].set_data(x_range, power_sum);
 
             # axis 0 y limits
@@ -1288,33 +1308,36 @@ class MainApp(MainAppCli, tk.Tk):
                 y_min=0
             if y_max:
                 # t=[y_max, y_min]
-                y_max = fround(y_max * AppConfig.plot.main_top_margin / self.plot_main_current_rounding) * self.plot_main_current_rounding
-                y_min = max(0, fround(y_min * AppConfig.plot.main_bottom_margin / self.plot_main_current_rounding) * self.plot_main_current_rounding)
+                y_max = Tools.fround(y_max * AppConfig.plot.main_top_margin / self.plot_main_current_rounding) * self.plot_main_current_rounding
+                y_min = max(0, Tools.fround(y_min * AppConfig.plot.main_bottom_margin / self.plot_main_current_rounding) * self.plot_main_current_rounding)
                 if y_max == y_min:
                     y_max += self.plot_main_current_rounding
 
                 # limit y axis scaling to 5 seconds and a min. change of 5% except for increased limits
                 yl2 = self.y_limits[0]
                 ml = (yl2['y_max'] - yl2['y_min']) * AppConfig.plot.main_y_limit_scale_value
-
-                ts = time.monotonic()
                 if y_max>yl2['y_max'] or y_min<yl2['y_min'] or (ts>yl2['ts'] and (y_min>yl2['y_min']+ml or y_min<yl2['y_max']-ml)):
+                    # self.logger.debug('limits %s' % ([yl2,y_min,y_max,ts,ml]))
                     yl2['y_min'] = y_min
                     yl2['y_max'] = y_max
                     yl2['ts'] = ts + AppConfig.plot.main_y_limit_scale_time
-
                     self.ax[0].set_ylim(top=y_max, bottom=y_min)
 
+                    # plt.xticks(np.arange(min(x), max(x)+1, 1.0))
 
             # shared x limits for all axis
-            for ax in self.ax:
-                ax.set_xlim(left=x_max-self.get_time_scale(), right=x_max)
+            if x_max!=None:
+                for ax in self.ax:
+                    ax.set_xlim(left=x_max-self.get_time_scale(), right=x_max)
 
 
             # for ax in self.ax:
             #     ax.autoscale_view()
             #     ax.relim()
 
+
+            if self.popup_hide_timeout!=None and ts>self.popup_hide_timeout:
+                self.show_popup(None)
 
             # DEBUG DISPLAY
 
@@ -1336,9 +1359,14 @@ class MainApp(MainAppCli, tk.Tk):
                         val = '%.4f' % val
                     p.append('%s=%s' % (key, val))
 
-                p.append('comp_rrq=%u' % (self.compressed_min_records<AppConfig.compression_min_records and (AppConfig.compression_min_records - self.compressed_min_records) or 0))
+                p.append('comp_rrq=%u' % (self.compressed_min_records<AppConfig.plot.compression.min_records and (AppConfig.plot.compression.min_records - self.compressed_min_records) or 0))
 
                 self.debug_label.configure(text=' '.join(p))
 
+        except ValueError as e:
+
+            self.logger.error('%s' % e)
+
         except Exception as e:
             AppConfig._debug_exception(e)
+

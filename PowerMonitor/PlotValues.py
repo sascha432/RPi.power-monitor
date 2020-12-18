@@ -3,11 +3,10 @@
 #
 
 from PowerMonitor.AppConfig import Channel
+import numpy as np
 
 class PlotValues(object):
     def __init__(self, channel: Channel):
-        if not isinstance(channel, Channel):
-            raise TypeError('Channel')
         self._channel = channel
         self.clear()
 
@@ -20,16 +19,16 @@ class PlotValues(object):
             return np.average(values)
         return np.average(values[-num:])
 
-    def __min_attr(self, attr):
+    def __min_attr(self, attr, idx=0):
         values = object.__getattribute__(self, attr)
-        if not values:
+        if not values[idx:]:
             raise ValueError('no values in list: %s' % attr)
             # return None
         return min(values)
 
-    def __max_attr(self, attr):
+    def __max_attr(self, attr, idx=0):
         values = object.__getattribute__(self, attr)
-        if not values:
+        if not values[idx:]:
             raise ValueError('no values in list: %s' % attr)
             # return None
         return max(values)
@@ -43,23 +42,23 @@ class PlotValues(object):
     def avg_P(self, num=10):
         return self.__avg_attr('P', num)
 
-    def min_U(self):
-        return self.__min_attr('U')
+    def min_U(self, idx=0):
+        return self.__min_attr('U', idx)
 
-    def min_I(self):
-        return self.__min_attr('I')
+    def min_I(self, idx=0):
+        return self.__min_attr('I', idx)
 
-    def min_P(self):
-        return self.__min_attr('P')
+    def min_P(self, idx=0):
+        return self.__min_attr('P', idx)
 
-    def max_U(self):
-        return self.__max_attr('U')
+    def max_U(self, idx=0):
+        return self.__max_attr('U', idx)
 
-    def max_I(self):
-        return self.__max_attr('I')
+    def max_I(self, idx=0):
+        return self.__max_attr('I', idx)
 
-    def max_P(self):
-        return self.__max_attr('P')
+    def max_P(self, idx=0):
+        return self.__max_attr('P', idx)
 
     def voltage(self):
         return self.U
@@ -74,25 +73,34 @@ class PlotValues(object):
         return len(self.U)
 
     def set_items(self, type_str, items):
-        if type_str in self._keys:
-            tmp = object.__getattribute__(self, type_str)
-            tmp = items.copy()
-            return
-        raise AttributeError('invalid type: %s' % type_str)
+        if type_str=='U':
+            self.U = items
+        elif type_str=='I':
+            self.I = items
+        elif type_str=='P':
+            self.P = items
+        else:
+            raise KeyError('set_items: %s' % type_str)
+
+        # self.__setitem__(type_str, items)
+        # if type_str in self._keys:
+        #     tmp = object.__getattribute__(self, type_str)
+        #     tmp = items.copy()
+        #     return
+        # raise AttributeError('invalid type: %s' % type_str)
 
     def items(self):
-        return self._items
+        return (
+            ('U', self.U),
+            ('I', self.I),
+            ('P', self.P)
+        )
 
     def clear(self):
         self.U = []
         self.P = []
         self.I = []
         self._keys = ('U', 'I', 'P')
-        self._items = [
-            ('U', self.U),
-            ('I', self.I),
-            ('P', self.P)
-        ]
 
 class PlotValuesContainer(object):
 
@@ -108,7 +116,7 @@ class PlotValuesContainer(object):
             val.clear()
 
     def __getitem__(self, key):
-        if isinstance(key, ChannelConfig):
+        if isinstance(key, Channel):
             return self._values[int(key)]
         return self._values[key]
 
@@ -143,8 +151,7 @@ class PlotValuesContainer(object):
 
     def set_items(self, type_str, channel, items):
         if type_str=='t':
-            tmp = object.__getattribute__(self, '_t')
-            tmp = items.copy()
+            self._t = items[:]
         elif channel<0 or channel>=len(self._values):
             raise ValueError('invalid channel: %u: type: %s' % (channel, type_str))
         else:

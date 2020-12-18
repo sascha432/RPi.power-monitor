@@ -6,7 +6,7 @@
 
 #encoding: utf-8
 
-from . import Calibration
+from .Calibration import Calibration
 from datetime import datetime
 import smbus
 
@@ -216,8 +216,8 @@ class INA3221():
         return self._calibration[channel].get_vbus_voltage(self._getBusVoltage_raw(channel))
 
 	# Gets the shunt voltage in mV (so +-168.3mV)
-    # def getShuntVoltage_mV(self, channel):
-    #     return self._getShuntVoltage_raw(channel) * Calibration.SHUNT_RAW_TO_MV_FACTOR
+    def getShuntVoltage_mV(self, channel):
+        return self._getShuntVoltage_raw(channel) * Calibration.RAW_VSHUNT_TO_MILLIVOLT
 
     # Gets the current value in mA, taking into account the config settings and current LSB
     def getCurrent_mA(self, channel):

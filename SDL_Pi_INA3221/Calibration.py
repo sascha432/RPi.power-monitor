@@ -10,7 +10,7 @@ class Calibration(object):
 
     def __init__(self, shunt=0.1, raw_offset=0, vshunt_mul=1.0, vbus_mul=1.0, disabled=False):
         if not disabled:
-            self.setCalibration(shunt, raw_offset, vshunt_mul, vbus_mul)
+            self.set_calibration(shunt, raw_offset, vshunt_mul, vbus_mul)
         self._disabled = disabled
 
     def set_calibration(self, shunt=None, raw_offset=None, vshunt_mul=None, vbus_mul=None, disabled=None):

@@ -118,6 +118,9 @@ class Merger(object):
                 path_str = str(path)
                 if not path_str in self._root:
                     raise KeyError('parameter does not exist. path=%s name=%s' % (path_str, key))
+                # if path_str in self._root:
+                #     param = self._root[path_str]._get_param(key)
+                #     param.set_value(val)
                 setattr(self._root[path_str], key, val)
 
 

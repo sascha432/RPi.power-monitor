@@ -8,8 +8,8 @@ import sys
 import os
 import socket
 import argparse
-from collections import ChainMap
-from PowerMonitor import MainApp
+from Config import (JsonWriter, YamlWriter)
+from PowerMonitor.MainApp import MainApp
 from PowerMonitor import AppConfig
 from PowerMonitor.Config import Config
 
@@ -21,52 +21,67 @@ parser.add_argument('--fullscreen', help='start in fullscreen mode', action='sto
 parser.add_argument('--daemon', help='run as daemon', action='store_true', default=None)
 parser.add_argument('--verbose', help='enable debug output', action='store_true', default=None)
 parser.add_argument('--check', help='check configuration', action='store_true', default=None)
+parser.add_argument('--print', help='check and display configuration', choices=['json', 'yaml'], default=None)
 parser.add_argument('--debug', help='enable debug mode', action='store_true', default=None)
 
 args = parser.parse_args()
 
 if args.debug:
     args.verbose = True
+if args.print:
+    args.check = True
 
 AppConfig.Mqtt.device_name = socket.gethostname()
+AppConfig.config_dir = args.config_dir
+
 
 try:
     config = Config(args.config_dir)
-    config.load(config.get_filename('config.json'), AppConfig.app)
+    root_object = config.load(config.get_filename('config.json'), args.print)
 except Exception as e:
+    if args.debug:
+        raise e
     parser.error('failed to load configuration: %s' % e)
 
+setattr(sys.modules[AppConfig.App.__module__], AppConfig.App.__class__.__qualname__, root_object)
+AppConfig = root_object
+AppConfig.channels = dict(zip(range(0, 3), list(AppConfig.channels)))
+setattr(AppConfig, 'get_filename', config.get_filename)
+
 if args.verbose!=None:
-    AppConfig.app.verbose = args.verbose
+    AppConfig.verbose = args.verbose
 if args.headless!=None:
-    AppConfig.app.headless = args.headless
+    AppConfig.headless = args.headless
 if args.daemon!=None:
-    AppConfig.app.daemon = args.daemon
+    AppConfig.daemon = args.daemon
 if args.display!=None:
-    AppConfig.app.gui.display = args.display
+    AppConfig.gui.display = args.display
 if args.fullscreen!=None:
-    AppConfig.app.gui.fullscreen = args.fullscreen
+    AppConfig.gui.fullscreen = args.fullscreen
+AppConfig._debug = args.debug
 
 default_handler = logging.StreamHandler(stream=sys.stdout)
-default_handler.setLevel(AppConfig.app.verbose and logging.DEBUG or logging.INFO)
+default_handler.setLevel(AppConfig.verbose and logging.DEBUG or logging.INFO)
 logger = logging.getLogger('power_monitor')
 logger.setLevel(logging.DEBUG)
 logger.addHandler(default_handler)
 
-if AppConfig.app.headless!=True:
-    if AppConfig.app.gui.display=='$DISPLAY':
-        AppConfig.app.gui.display = os.environ.get('DISPLAY')
-        if not AppConfig.app.gui.display:
+if AppConfig.headless!=True:
+    if AppConfig.gui.display=='$DISPLAY':
+        AppConfig.gui.display = os.environ.get('DISPLAY')
+        if not AppConfig.gui.display:
             logger.warning('DISPLAY not set, forcing headless mode')
-            AppConfig.app.headless = True
+            AppConfig.headless = True
     else:
-        os.environ['DISPLAY'] = AppConfig.app.gui.display
+        os.environ['DISPLAY'] = AppConfig.gui.display
 
 if args.check:
+
+    print()
     print('OK')
     sys.exit(0)
 
-app = MainApp(logger)
+app = MainApp(logger, AppConfig)
 app.init_signal_handler()
 
 if AppConfig.daemon:

@@ -2,8 +2,7 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from . import Type
-from . import Index
+from . import *
 import sys
 import copy
 
@@ -45,6 +44,7 @@ class Param(object):
                 self._types = Type(types)
         self._default = default
         self._converter = converter
+        self._raw_value = None
 
     def __str__(self):
         return 'name=%s default=%s value=%s types=%s' % (self.name, self._default, self.get_value('<DEFAULT>'), self._types)
@@ -63,11 +63,13 @@ class Param(object):
             else:
                 raise TypeError('type %s not allowed: %s' % (Type.name(value), self._types))
         if self._converter!=None:
-            if callable(self._converter):
+            if callable(self._converter): # and not isinstance(self._converter, Converter):
+                self._raw_value = value
                 value = self._converter(value, self)
             else:
                 if isinstance(self._converter, tuple):
                     self._converter = self._converter[0](self._converter[1])
+                self._raw_value = value
                 value = self._converter.convert(value, self)
         return value
 
@@ -110,13 +112,15 @@ class Param(object):
         if value==self._types:
             raise TypeError('allowed types: %s' % self._types)
 
-    def convert_value(value, converter):
-        if isinstance(self._converter, Converter):
-            return self._converter.convert(value, self)
-        self.validate_type(value)
-        if callable(converter):
-            return converter(value)
-        return value
+    # def convert_value(self, value, converter):
+    #     if isinstance(self._converter, Converter):
+    #         self._raw_value = value
+    #         return self._converter.convert(value, self)
+    #     self.validate_type(value)
+    #     if callable(converter):
+    #         self._raw_value = value
+    #         return converter(value)
+    #     return value
 
     def finalize(self, path):
         if callable(self._default):

@@ -1,7 +1,7 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from . import Param
+from . import *
 import itertools
 import types
 import re
