@@ -911,7 +911,7 @@ class MainApp(MainAppCli, tk.Tk):
         return "break"
 
 
-    def show_popup(self, msg, timeout=5):
+    def show_popup(self, msg, timeout=3.5):
         if msg==None:
             self.popup_hide_timeout = None
             self.popup_frame.place(rely=2.0)
@@ -1053,30 +1053,19 @@ class MainApp(MainAppCli, tk.Tk):
         finally:
             self.lock.release()
 
-    # def plot_update_y_ticks_primary(self, y, pos):
-    #     yl = self.y_limits[0]
-    #     if 'y_max' in yl and yl['y_max']<2.0:
-    #         diff = yl['y_max'] - yl['y_min']
-    #         if diff<1.0:
-    #             return '%d' % (int(y * 1000))
-    #     return '%.2f' % y
+    # def _debug_validate_length(self):
+    #     if AppConfig._debug:
+    #         lens = []
+    #         for type, ch, items in self.values.all():
+    #             lens.append(len(items))
+    #         if sum(lens)/len(lens)!=lens[0]:
+    #             raise RuntimeError('array length mismatch: %s' % (lens))
 
-    # def plot_update_y_ticks_secondary(self, y, pos):
-    #     return '%.2f' % y
+    def min_max_downsample(self, x, y, num_bins, do_x=True):
+        pts_per_bin = y.size // num_bins
 
-    def _debug_validate_length(self):
-        if AppConfig._debug:
-            lens = []
-            for type, ch, items in self.values.all():
-                lens.append(len(items))
-            if sum(lens)/len(lens)!=lens[0]:
-                raise RuntimeError('array length mismatch: %s' % (lens))
-
-    def min_max_downsample_v3(self, x, y, pts_per_bin): #num_bins):
-        # pts_per_bin = x.size // num_bins
-        num_bins = x.size // pts_per_bin
-
-        x_view = x.reshape(num_bins, pts_per_bin)
+        if do_x:
+            x_view = x.reshape(num_bins, pts_per_bin)
         y_view = y.reshape(num_bins, pts_per_bin)
         i_min = np.argmin(y_view, axis=1)
         i_max = np.argmax(y_view, axis=1)
@@ -1084,7 +1073,9 @@ class MainApp(MainAppCli, tk.Tk):
         r_index = np.repeat(np.arange(num_bins), 2)
         c_index = np.sort(np.stack((i_min, i_max), axis=1)).ravel()
 
-        return x_view[r_index, c_index], y_view[r_index, c_index]
+        if do_x:
+            return x_view[r_index, c_index]
+        return y_view[r_index, c_index]
 
     def compress_values(self):
 
@@ -1100,89 +1091,61 @@ class MainApp(MainAppCli, tk.Tk):
                 for type, ch, items in self.values.all():
                     self.values.set_items(type, ch, items[idx + 1:])
 
-            # compress data
-            if self.compressed_min_records>AppConfig.plot.compression.min_records:
-                start_idx = self.values.find_time_index(self.compressed_ts, True)
-                if start_idx!=None:
-                    end_idx = self.values.find_time_index(AppConfig.plot.compression.uncompressed_time)
-                    if end_idx!=None:
-                        values_per_second = AppConfig.plot.max_values / float(AppConfig.plot.max_time)
+            # compress data if min records have been added
+            if self.compressed_min_records<AppConfig.plot.compression.min_records:
+                return
 
-                        count = end_idx - start_idx
-                        timeframe = self.values.timeframe(start_idx, end_idx)
-                        groups = timeframe * values_per_second
-                        if groups:
-                            # split data into groups of group_size
-                            group_size = int(count / groups)
-                            if group_size>=4:
-                                n = count / group_size
-                                if n>4 or count>group_size:
-                                    # find even count
-                                    while count % group_size != 0:
-                                        count -= 1
-                                        end_idx -= 1
-                                    n = count / group_size
+            start_idx = self.values.find_time_index(self.compressed_ts, True)
+            if start_idx==None:
+                return
+            end_idx = self.values.find_time_index(AppConfig.plot.compression.uncompressed_time)
+            if end_idx==None:
+                return
+            values_per_second = AppConfig.plot.max_values / float(AppConfig.plot.max_time)
+            count = end_idx - start_idx
+            timeframe = self.values.timeframe(start_idx, end_idx)
+            groups = timeframe * values_per_second
+            if groups==0:
+                return
+            # split data into groups of group_size
+            group_size = int(count / groups)
+            if group_size>=4 and count>group_size*2:
+                # find even count
+                while count % group_size != 0:
+                    count -= 1
+                    end_idx -= 1
+                n = count / group_size
 
-                                    self.logger.debug('compress group_size=%u data=%u:%u#%u' % (group_size, start_idx, end_idx, count))
+                self.logger.debug('compress group_size=%u data=%u:%u#%u vps=%.2f' % (group_size, start_idx, end_idx, count, values_per_second))
 
-                                    old_timestamp = self.compressed_ts
-                                    # store timestamp
-                                    self.compressed_ts = self.values.time()[end_idx]
-                                    self.compressed_min_records = 0
+                old_timestamp = self.compressed_ts
+                # store timestamp
+                self.compressed_ts = self.values.time()[end_idx]
+                self.compressed_min_records = 0
 
-                                    before = len(self.values._t)
+                before = len(self.values._t)
 
-                                    tmp1 = len(self.values.time()) - end_idx
-                                    tmp2 = self.values.timeframe(end_idx)
-                                    tmp3 = tmp1 / tmp2
-                                    tmp4 = 'tf=%.3fs items/s=%.2f num=%u' % (tmp2, tmp3, tmp1)
+                # split array into 3 array and one of them into groups and generate mean values for each group concatenation the flattened result
+                for type, ch, items in self.values.all():
 
-                                    # self._debug_validate_length()
+                    self.add_stats('ud', len(items))
 
-                                    # for type, ch, items in self.values.all():
-                                    #     items2 = np.array_split(items, [start_idx, end_idx])
-                                    #     print('%s:%u %u,%u,%u %u %.3f' % (type, ch, len(items2[0]), len(items2[1]), len(items2[2]), len(items), len(items2[1]) / group_size))
+                    items = np.array_split(items[:], [start_idx, end_idx])
+                    items[1] = np.array(items[1])
+                    items[1] = self.min_max_downsample(items[1], items[1], group_size, type=='t')
 
-                                    time_items = []
+                    items[1] = np.array(items[1]).reshape(-1, group_size).mean(axis=0)
 
-                                    # split array into 3 array and one of them into groups and generate mean values for each group concatenation the flattened result
-                                    for type, ch, items in self.values.all():
-                                        # print('len=%u group_size=%u data=%u:%u#%u type=%s items=%u ch=%u' % (len(items[start_idx:end_idx]), group_size, start_idx, end_idx, count, type, len(items), ch))
+                    tmp = np.concatenate(np.array(items, dtype=object).flatten()).tolist()
+                    self.values.set_items(type, ch, tmp)
 
-                                        self.add_stats('ud', len(items))
+                    self.add_stats('cd', len(tmp))
 
-                                        items = np.array_split(items, [start_idx, end_idx])
+                diff = time.monotonic() - t
 
-                                        if type=='t':
-                                            time_items = np.array(items[1])
-                                        items[1] = np.array(items[1][:])
+                self.add_stats('cr', before - len(self.values._t))
+                self.add_stats('ct', diff)
 
-                                        # min_val = min(items[1])
-                                        # max_val = max(items[1])
-
-                                        x, items[1] = self.min_max_downsample_v3(time_items, items[1], group_size)
-
-                                        # items[1] = np.array(items[1]).reshape(-1, group_size).mean(axis=0)
-
-                                        tmp = np.concatenate(np.array(items, dtype=object).flatten()).tolist()
-                                        self.values.set_items(type, ch, tmp)
-
-                                        self.add_stats('cd', len(tmp))
-
-                                    # self._debug_validate_length()
-
-                                    # for type, ch, items in self.values.all():
-                                    #     print('%s:%u %u' % (type, ch, len(items)))
-
-
-                                    diff = time.monotonic() - t
-                                    # print('%s total=%u count=%u compressed=%u ratio=%.2f diff_t=%.2fs t=%.4f' % (tmp4, len(self.values.time()), count, len(tmp), count / len(tmp), diff_t, diff))
-
-                                    after = len(self.values._t)
-                                    print('before=%u after=%d t=%.4f' % (before, after, diff))
-
-                                    self.add_stats('cc', 1)
-                                    self.add_stats('ct', len(tmp))
         except Exception as e:
             AppConfig._debug_exception(e)
 
