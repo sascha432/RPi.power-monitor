@@ -2,7 +2,7 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from Config import (Loader, DictType, RangeType, Param, JsonReader)
+from Config import (Loader, Merger, DictType, RangeType, Param, JsonReader)
 from os import path
 from PowerMonitor import AppConfig
 
@@ -14,9 +14,9 @@ class Config:
             raise IOError('No such file or directory: %s' % (self._config_dir))
 
     def get_filename(self, file):
-        return path.realpath(path.join(self._config_dir, file))
+        return path.realpath(path.join(self._config_dir, file.format(config_dir=self._config_dir)))
 
-    def load(self, file, target):
+    def load(self, file):
 
         loader = Loader('app', AppConfig.App(DictType({
             'channels': AppConfig.ChannelList(RangeType(range(0, 3), AppConfig.Channel, DictType({
@@ -31,5 +31,9 @@ class Config:
             'backlight': AppConfig.Backlight()
         })))
 
-        reader = JsonReader(loader._root, False, target)
-        reader.loads_from(file)
+        reader = JsonReader(loader.root, False)
+        config = reader.loads_from(file)
+        merger = Merger(loader.root)
+        merger.merge(config)
+
+        return loader.root_object

@@ -8,6 +8,6 @@ from .Struct import (StructType, DictType, RangeType, ListType)
 from .Param import (Param)
 from .Converter import (Converter, MarginConverter, TimeConverter, RangeConverter, IteratorConverter, GeneratorConverter)
 from .Base import (Base, ListBase, ItemBase, Root)
-from .Loader import Loader
+from .Loader import (Loader, Merger)
 from .Writer import (Writer, YamlWriter, ObjectWriter, JsonWriter)
 from .Reader import (JsonReader)

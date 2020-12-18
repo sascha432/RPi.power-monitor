@@ -97,7 +97,7 @@ class ObjectWriter(Writer):
         return objs
 
     def create_object(self):
-        return self._dump(self._root._child)
+        return self._dump(self._root._object)
 
     def dumps(self, indent=2):
         pprint(self.create_object(), stream=self._output)

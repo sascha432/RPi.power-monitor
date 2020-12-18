@@ -102,11 +102,11 @@ class Root(Base):
         # self._children = [child]
         self._root_name = name
         self._objects = {name: child}
+        self.__setattr__(name, child)
 
     @property
-    def _child(self):
+    def _object(self):
         return self._objects[self._root_name]
-        # return self._children[0]
 
     def __setitem__(self, key, obj):
         self._objects[str(key)] = obj
