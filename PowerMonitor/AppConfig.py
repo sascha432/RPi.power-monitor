@@ -3,7 +3,10 @@
 #
 
 from SDL_Pi_INA3221.Calibration import Calibration as InaCalibration
-from Config import (Type, Path, Param, DictType, TimeConverter, MarginConverter, RangeConverter, Base, ListBase, ItemBase)
+from Config import (Type, Path, Param, DictType, TimeConverter, MarginConverter, RangeConverter, ListConverter, EnumConverter, Base, ListBase, ItemBase)
+from . import Enums
+from .Gui import Gui
+
 
 class App(Base):
 
@@ -21,6 +24,7 @@ class App(Base):
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)
+
 
     _debug = False
     _terminate = None
@@ -62,12 +66,12 @@ class Plot(Base):
     max_time = TimeConverter.value(300)
     line_width = 1.0
 
-    display_energy = ('Wh', (str), ['Wh', 'Ah'])
+    display_energy = EnumConverter.value(Enums.DISPLAY_ENERGY.AH, Enums.DISPLAY_ENERGY)
 
     main_top_margin = MarginConverter.top_value(5),
     main_bottom_margin = MarginConverter.bottom_value(20),
     main_current_rounding = 0.25
-    main_power_rounding = 2.0
+    main_power_rounding = 0.5
 
     main_y_limit_scale_time = TimeConverter.value(5.0)
     main_y_limit_scale_value = 0.05
@@ -88,17 +92,48 @@ class PlotCompression(Base):
 
 class Gui(Base):
 
+    title = 'Power Monitor'
     fullscreen = True
     display = '$DISPLAY'
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)
 
+class KeyBindings(Base):
+
+    toggle_fullscreen = ('<F11>', (str,))
+    end_fullscreen = ('<Escape>', (str,))
+    plot_visibility = ('<F2>', (str,))
+    plot_primary_display = ('<F3>', (str,))
+    plot_display_energy= ('<F4>', (str,))
+    toggle_debug = ('<Control-F9>', (str,))
+    reload_gui_config = ('<Alt-F5>', (str,))
+    reload_config = ('<Control-F5>', (str,))
+    reset_plot = ('<Control-F10>', (str,))
+    menu = ('<F1>', (str,))
+    quit = ('<Alt-F4>', (str,))
+    wakeup = ('<Enter>,<Leave>,<Motion>', (str,))
+
+    def __init__(self, struct={}):
+        Base.__init__(self, struct)
+
 class Backlight(Base):
+
+    pwm_threshold = 20
+    check_interval = TimeConverter.value(5, 's')
 
     def __init__(self, struct=DictType({
             'gpio': Param(None, (int, None))
         })):
+        Base.__init__(self, struct)
+
+class Ina3221(Base):
+
+    i2c_address = 0x040
+    read_delay = TimeConverter.value(0.125, 's')
+    averaging_mode = ListConverter.value(128, [1, 4, 16, 64, 128, 256, 512, 1024], (int,))
+
+    def __init__(self, struct={}):
         Base.__init__(self, struct)
 
 class Mqtt(Base):
@@ -106,10 +141,10 @@ class Mqtt(Base):
     device_name = 'PowerMonitor'
     sensor_name = 'INA3221'
 
-    host = (None, str)
+    host = (None, (str,))
     port = RangeConverter.value(1883, range(0, 65535), (int,))
     keepalive = TimeConverter.value(60)
-    qos = (2, (int,), [0, 1, 2])
+    qos = ListConverter.value(2, [0, 1, 2], (int,))
 
     topic_prefix = 'home'
     auto_discovery = True
@@ -138,24 +173,6 @@ class Mqtt(Base):
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)
-
-        # _status_topic = '{topic_prefix}/{device_name}/{sensor_name}/status'
-        # _channel_topic = '{topic_prefix}/{device_name}/{sensor_name}/ch{channel}'
-
-        # _auto_discovery_topic = '{auto_discovery_prefix}/sensor/{device_name}_{sensor_name}_ch{channel}_{entity}/config'
-        # _model = 'RPI.ina3221-power-monitor'
-        # _manufacturer = 'KFCLabs'
-        # _entities = {
-        #     'U': 'V',
-        #     'P': 'W',
-        #     'I': 'A',
-        #     'EP': 'kWh',
-        #     'EI': 'Ah'
-        # }
-        # _aggregated = [
-        #     ('P', 'W'),
-        #     ('E', 'kWh')
-        # ]
 
     def _is_key_valid(self, name):
         if not Path._is_key_valid(name):
@@ -230,25 +247,15 @@ class Channels(list):
     def __init__(self):
         list.__init__([])
 
-#     def __getitem__(self, key):
-#         return list.__getitem__(self, key)
-
-#     def __setitem__(self, key, channel):
-#         list.__setitem__(self, key, channel)
-
-#     def __dir__(self):
-#         return range(0, self.__len__())
-
-#     def __len__(self):
-#         return list.__len__(self)
-
-
 class ChannelCalibration(object):
     def __init__(self, config):
         self._config = config
 
     def __getitem__(self, key):
         return self._config.channels[key].calibration
+
+    def __contains__(self, key):
+        return key in self._config.channels
 
     def __len__(self):
         return len(self._config.channels)
