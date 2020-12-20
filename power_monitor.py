@@ -24,6 +24,7 @@ parser.add_argument('--verbose', help='enable debug output', action='store_true'
 parser.add_argument('--check', help='check configuration', action='store_true', default=None)
 parser.add_argument('--print', help='check and display configuration', choices=['json', 'yaml', 'raw'], default=None)
 parser.add_argument('--section', help='config section to display', type=str, default=None)
+parser.add_argument('--key', help='config key(s) to display', action="append", nargs='*', default=None)
 parser.add_argument('--debug', help='enable debug mode', action='store_true', default=None)
 
 args = parser.parse_args()
@@ -78,7 +79,7 @@ if AppConfig.headless!=True:
     if AppConfig.gui.display=='$DISPLAY':
         AppConfig.gui.display = os.environ.get('DISPLAY')
         if not AppConfig.gui.display:
-            logger.warning('DISPLAY not set, forcing headless mode')
+            logger.error('DISPLAY not set, forcing headless mode')
             AppConfig.headless = True
     else:
         os.environ['DISPLAY'] = AppConfig.gui.display
@@ -87,7 +88,7 @@ if args.check:
     if args.print==None:
         print('OK')
     else:
-        config.print_config(args.print, args.section)
+        config.print_config(args.print, (args.section, args.key and args.key[0] or None))
     sys.exit(0)
 
 

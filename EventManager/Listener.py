@@ -16,6 +16,8 @@ class Listener(object):
     # handler           callable with Notification object as argument
     #                   raise StopSleep to skip the remaining sleep time after returning
     def sleep(self, sleep_time, handler):
+        if sleep_time<=0:
+            sleep_time = 0.001
         timeout = time.monotonic() + sleep_time
         try:
             while sleep_time>0:
@@ -34,6 +36,8 @@ class Listener(object):
     # returns None after timeout or a Notification object
     # the event has to be removed with next() after processing
     def wait(self, wait_time):
+        if wait_time<=0:
+            wait_time = 0.001
         timeout = time.monotonic() + wait_time
         while wait_time>0:
             if not self._event.wait(wait_time):

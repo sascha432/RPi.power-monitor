@@ -17,7 +17,9 @@ class Event(object):
         self._notifications = {}
 
     # add a notification for one thread or any listening
-    def notify(self, notification: Notification):
+    def notify(self, notification, data=None, priority=EVENT_MANAGER.PRIORITY.NORMAL):
+        if not isinstance(notification, Notification):
+            notification = Notification(notification, data, priority)
         event = self._event
         with self._notification_lock:
             self._notify(notification)
@@ -27,7 +29,9 @@ class Event(object):
     # notify multiple threads
     # set copy=True to create a deepcopy of the notification for each thread
     # the first one receives the original notification
-    def multi_notify(self, names: tuple, notification:Notification):
+    def multi_notify(self, names: tuple, notification, data=None, priority=EVENT_MANAGER.PRIORITY.NORMAL):
+        if not isinstance(notification, Notification):
+            notification = Notification(notification, data, priority)
         event = self._event
         with self._notification_lock:
             for name in names:

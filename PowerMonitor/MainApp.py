@@ -50,7 +50,6 @@ class GuiConfig(object):
                     if not isinstance(val, float) and '.' in s:
                         s = s.split('.')[-1]
                     tmp[key] = s
-        print(tmp)
         return tmp
 
 class MainAppCli(Plot.Plot):
@@ -468,7 +467,6 @@ class MainApp(MainAppCli):
 
 
     def destroy(self):
-        MainAppCli.destroy(self)
         self._gui.destroy()
 
     def mainloop(self):
@@ -479,7 +477,6 @@ class MainApp(MainAppCli):
             MainAppCli.loop(self, False)
 
     def quit(self):
-        MainAppCli.quit(self)
         if self._gui:
             self._gui.quit()
 
@@ -683,7 +680,7 @@ class MainApp(MainAppCli):
         idx = 0
         for ax in self.ax:
             n = self.get_plot_geometry(idx)
-            self.debug(__main__, 'idx=%u v=%s get_plot_geometry=%s', idx, str(self._gui_config.plot_visibility), s)
+            self.debug(__name__, 'idx=%u v=%s get_plot_geometry=%s', idx, str(self._gui_config.plot_visibility), s)
             if n!=None:
                 ax.set_visible(True)
                 ax.change_geometry(int(n / 100) % 10, int(n / 10) % 10, int(n) % 10)

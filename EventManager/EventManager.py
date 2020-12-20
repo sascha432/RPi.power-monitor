@@ -19,3 +19,6 @@ class EventData(object):
 
     def __getattr__(self, key):
         return self._data[key]
+
+    def __str__(self):
+        return '%s' % self._data

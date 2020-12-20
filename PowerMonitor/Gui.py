@@ -9,8 +9,6 @@ import copy
 from . import Enums
 from Config import Param, EnumConverter
 
-
-
 class Gui(tk.Tk):
 
     def __init__(self, parent):
@@ -43,12 +41,10 @@ class Gui(tk.Tk):
         tk.Tk.mainloop(self)
 
     def destroy(self):
-        self._parent.terminate.set()
-        self._parent.error(__name__, "GUI DESTROY")
-        tk.Tk.destroy(self)
+        self._parent.terminate_app()
 
     def quit(self):
-        self._parent.error(__name__, "GUI QUIT")
+        tk.Tk.destroy(self)
         tk.Tk.quit(self)
 
     def execute_key_binding(self, func, event=None):

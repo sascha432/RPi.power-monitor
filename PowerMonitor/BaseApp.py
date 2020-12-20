@@ -2,8 +2,8 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from EventManager import (EVENT_MANAGER, Event, Notification)
 from . import PLOT_VISIBILITY, PLOT_PRIMARY_DISPLAY, ANIMATION, SCHEDULER_PRIO, DISPLAY_ENERGY
+import EventManager
 import threading
 import time
 import os
@@ -18,21 +18,23 @@ class Terminate:
         self._terminate = terminate
     def set(self):
         self._terminate.set()
-        self._event = Notification(EVENT_MANAGER.THREAD.ANY, {'cmd': 'quit'})
+        self._event.notify(EventManager.EVENT_MANAGER.THREAD.ANY, {'cmd': 'quit'})
     def is_set(self):
         return self._terminate.is_set()
     def wait(self, timeout):
         return self._terminate.wait(timeout)
 
 class BaseApp(object):
+
     ENUMS = ()
+
     def __init__(self):
         global AppConfig
         AppConfig = self._app_config
 
         self._threads = []
-        self._pids = []
-        self._event = Event()
+        self._thread_idents = []
+        self._event = EventManager.Event()
 
         self.lock = threading.Lock()
         self.thread_lock = threading.Lock()
@@ -48,6 +50,29 @@ class BaseApp(object):
 
     def signal_handler(self, signal, frame):
         self.debug(__name__, 'exiting, signal %u...', signal)
+        self.terminate_app()
+
+    # call from main thread only
+    def terminate_app(self):
+        self.terminate.set()
+        self.debug(__name__, 'waiting for threads to terminate... %s' % self._thread_idents)
+        timeout = time.monotonic() + 10
+        count = 1
+        while count>0:
+            if time.monotonic()<timeout:
+                self.info(__name__, 'PID %u ending' % os.getpid())
+                break
+            count = len(self._threads)
+            for thread in self._threads:
+                n = 0
+                for thread in self._threads:
+                    if thread.is_alive():
+                        n += 1
+                if thread.is_alive():
+                    self.info('waiting for thread ident %s (%u left)' % (thread.ident % n))
+                    thread.join(1)
+                else:
+                    count -= 1
         self.destroy()
         self.quit()
         sys.exit(signal)
@@ -81,7 +106,7 @@ class BaseApp(object):
 
     def destroy(self):
         self.debug(__name__, 'destroy')
-        self.info(__main__, 'shutting down')
+        self.info(__name__, 'shutting down')
         self.terminate.set();
 
     def quit(self):
@@ -101,7 +126,7 @@ class BaseApp(object):
 
     def get_pids(self):
         pids = []
-        for pid in self._pids:
+        for pid in self._thread_idents:
             pids.append(pid[1])
         return pids
 
@@ -109,9 +134,9 @@ class BaseApp(object):
         name = '%s:%s' % (name, sub)
         self.thread_lock.acquire()
         try:
-            pid = os.getpid()
-            self._pids.append((name, pid))
-            self.debug(__name__, 'add thread %s pid %u (%s)' % (name, pid, self.get_pids()))
+            pid = threading.current_thread().ident
+            self._thread_idents.append((name, pid))
+            self.debug(__name__, 'add thread %s ident %u (%s)' % (name, pid, self.get_pids()))
         finally:
             self.thread_lock.release()
 
@@ -120,10 +145,10 @@ class BaseApp(object):
         self.thread_lock.acquire()
         try:
             index = 0
-            for thread in self._pids:
+            for thread in self._thread_idents:
                 if thread[0]==name:
                     self.debug(__name__, 'remove thread %s pid %u (%s)' % (thread[0], thread[1], self.get_pids()))
-                    del self._pids[index]
+                    del self._thread_idents[index]
                     break
                 index += 1
         finally:
@@ -145,21 +170,6 @@ class BaseApp(object):
         except Exception as e:
             AppConfig._debug_exception(e)
 
-        self.debug(__name__, 'waiting for threads to terminate...')
-        timeout = time.monotonic() + 10
-        count = 1
-        while count>0:
-            if time.monotonic()<timeout:
-                print('PID %u' % os.getpid())
-                break
-            count = len(self._threads)
-            for thread in self._threads:
-                if thread.is_alive():
-                    thread.join(1)
-                else:
-                    count -= 1
-        self.quit()
-
     def fork(self):
         pid = os.fork()
         if pid > 0:
@@ -175,7 +185,7 @@ class BaseApp(object):
 
     def daemonize(self, daemon):
         self.init_signal_handler()
-        self.thread_daemonize(__name__, self.main_thread, sub='demon')
+        self.thread_daemonize(__name__, self.main_thread, sub='daemon')
         if self._gui:
             self._gui.mainloop()
         else:

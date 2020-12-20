@@ -8,6 +8,7 @@ import hashlib
 import json
 import copy
 import numpy as np
+import EventManager
 
 class Mqtt(Idle.Idle):
 
@@ -17,6 +18,7 @@ class Mqtt(Idle.Idle):
 
         self.client = None
         self.mqtt_connected = False
+        self._mqtt_thread_state = {'quit': False}
 
     def start(self):
         self.debug(__name__, 'start')
@@ -26,8 +28,7 @@ class Mqtt(Idle.Idle):
 
     def destroy(self):
         self.debug(__name__, 'destroy')
-        if self.client!=None:
-            self.end_mqtt()
+        self._mqtt_thread_state['quit'] = True
 
     def init_vars(self):
         self.debug(__name__, 'init_vars')
@@ -60,22 +61,23 @@ class Mqtt(Idle.Idle):
             self.error(__name__, 'paho mqtt client not avaiable. MQTT support disabled')
             return False
 
+        self._mqtt_thread_listener = EventManager.Listener('mqtt', self._event)
+
         self.client = paho.mqtt.client.Client(clean_session=True)
         self.client.on_connect = self.on_connect
         self.client.on_disconnect = self.on_disconnect
         if False:
             self.client.on_log = self.on_log
         self.client.reconnect_delay_set(min_delay=1, max_delay=30)
-
         self.client.will_set(AppConfig.mqtt.get_status_topic(), payload=AppConfig.mqtt.payload_offline, qos=AppConfig.mqtt.qos, retain=True)
 
-        self.thread_daemonize(__name__, self.mqtt_client_thread, sub='client')
         return True
 
     def end_mqtt(self):
         if self.mqtt_connected:
             self.info(__name__, 'disconnecting from MQTT server')
             self.client.disconnect(True)
+            self.client.loop_stop()
             self.mqtt_connected = False
 
     def mqtt_publish_auto_discovery(self):
@@ -153,21 +155,26 @@ class Mqtt(Idle.Idle):
             'value_template': '{{ value_json.%s }}' % value_json_name
         }, ensure_ascii=False, indent=None, separators=(',', ':'))
 
-
-    def mqtt_client_thread(self):
-        self.thread_register(__name__, sub='client')
-        self.info(__name__, 'connecting to MQTT server %s', self.mqtt_server)
-        self.client.connect(AppConfig.mqtt.host, port=AppConfig.mqtt.port, keepalive=AppConfig.mqtt.keepalive)
-        self.client.loop_forever()
-        self.thread_unregister(__name__, sub='client')
+    def mqtt_thread_handler(self, notification):
+        self.debug(__name__, 'cmd=%s data=%s', notification.data.cmd, notification.data)
+        if notification.data.cmd=='quit':
+            self._mqtt_thread_state['quit'] = True
+            raise EventManager.StopSleep
+        elif notification.data.cmd=='reconnect':
+            selt.client.reconnect()
+            raise EventManager.StopSleep
 
     def mqtt_thread(self):
         self.thread_register(__name__)
-        # wait 5 seconds for the initial connection to be established
-        self.terminate.wait(5)
 
-        while not self.terminate.is_set():
-            if self.mqtt_connected and np.sum(self.averages[0])>=3:
+        self.client.connect(AppConfig.mqtt.host, port=AppConfig.mqtt.port, keepalive=AppConfig.mqtt.keepalive)
+        self.client.loop_start()
+
+        while not self._mqtt_thread_state['quit']:
+            if not self.mqtt_connected or np.sum(self.averages[0])<3:
+                sleep_time = 5
+            else:
+                sleep_time = AppConfig.mqtt.update_interval
                 tmp = None
                 self.lock.acquire()
                 try:
@@ -216,6 +223,8 @@ class Mqtt(Idle.Idle):
                     AppConfig._debug_exception(e)
                     self.client.reconnect()
 
-            self.terminate.wait(AppConfig.mqtt.update_interval)
+            self._mqtt_thread_listener.sleep(sleep_time, self.mqtt_thread_handler)
+
+        self.end_mqtt()
 
         self.thread_unregister(__name__)

@@ -6,7 +6,7 @@ from . import Mqtt
 from . import ChannelCalibration
 from . import ANIMATION
 import SDL_Pi_INA3221
-from SDL_Pi_INA3221.Calibration import Calibration
+import EventManager
 import time
 import numpy as np
 import shutil
@@ -22,12 +22,14 @@ class Sensor(Mqtt.Mqtt):
         AppConfig = self._app_config
 
         self._energy_backp_file_num = 0
+        self._read_sensor_thread_state = {'quit': False}
 
         self.ina3221 = SDL_Pi_INA3221.INA3221(addr=AppConfig.ina3221.i2c_address, avg=AppConfig.ina3221.averaging_mode, vbus_ct=AppConfig.ina3221.vbus_conversion_time, vshunt_ct=AppConfig.ina3221.vshunt_conversion_time, shunt=1)
         self.info(__name__, 'sensor read interval %.2fms' % (self.ina3221._channel_read_time * 1000))
 
     def start(self):
         self.debug(__name__, 'start')
+        self._read_sensor_thread_listener = EventManager.Listener('read_sensor', self._event)
         self.thread_daemonize(__name__, self.read_sensor_thread)
 
     def init_vars(self):
@@ -40,14 +42,19 @@ class Sensor(Mqtt.Mqtt):
         self.data = [[], [ [[], [], []], [[], [], []], [[], [], []] ]]
         # self.data = [[], [[[]]*3]*3]
 
+    def read_sensor_thread_handler(self, notification):
+        self.debug(__name__, 'cmd=%s data=%s', notification.data.cmd, notification.data)
+        if notification.data.cmd=='quit':
+            self._read_sensor_thread_state['quit'] = True
+            raise EventManager.StopSleep
+
     def read_sensor_thread(self):
         self.thread_register(__name__)
         try:
-            while not self.terminate.is_set():
+            while not self._read_sensor_thread_state['quit']:
                 t = time.monotonic()
                 self.data[0].append(t)
                 for channel in AppConfig.channels:
-
                     ch = int(channel)
 
                     if channel in self.channels:
@@ -110,10 +117,9 @@ class Sensor(Mqtt.Mqtt):
                     self.animation_set_state(pause=False)
 
                 diff = time.monotonic() - t
-                if diff>0:
-                    diff = self.ina3221._channel_read_time - diff
-                    if diff>0:
-                        self.terminate.wait(diff)
+                diff = diff>0 and (self.ina3221._channel_read_time - diff) or 0
+                self._read_sensor_thread_listener.sleep(diff, self.read_sensor_thread_handler)
+
         except Exception as e:
             self.error(_name_, str(e))
             AppConfig._debug_exception(e)

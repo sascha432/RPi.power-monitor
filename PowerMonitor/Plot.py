@@ -6,6 +6,7 @@ import sys
 import time
 import matplotlib.ticker as ticker
 import numpy as np
+import EventManager
 from . import FormatFloat, Sensor, Tools, PLOT_VISIBILITY, PLOT_PRIMARY_DISPLAY, ANIMATION, SCHEDULER_PRIO, DISPLAY_ENERGY
 
 class Plot(Sensor.Sensor):
@@ -17,15 +18,27 @@ class Plot(Sensor.Sensor):
         self._time_scale_num = 0
         self._time_scale_min_time = 5
         self._time_scale_items = self.get_time_scale_list()
+        self._plot_thread_state = {'quit': False}
+
+    def start(self):
+        # self._plot_thread_listener = EventManager.Listener('plot', self._event)
+        # self.thread_daemonize('plot_thread', self.plot_thread)
+        pass
 
     def init_vars(self):
         self.debug(__name__, 'init_vars')
         self._time_scale_num = 0
 
+    def plot_thread_handler(self, notification):
+        self.debug(__name__, 'cmd=%s data=%s', notification.data.cmd, notification.data)
+        if notification.data.cmd=='quit':
+            self._plot_thread_state['quit'] = True
+            raise EventManager.StopSleep
+
     def plot_thread(self):
-        time.sleep(2)
         self.thread_register(__name__)
-        while not self.terminate.is_set():
+        self._plot_thread_listener.sleep(2, self.plot_thread_handler)
+        while not self._plot_thread_state['quit']:
             # if self.animation_is_running():
             if True:
                 self.lock.acquire()
@@ -33,7 +46,7 @@ class Plot(Sensor.Sensor):
                     self.plot_values(2, True)
                 finally:
                     self.lock.release()
-            time.sleep(0.025)
+            self._plot_thread_listener.sleep(0.05, self.plot_thread_handler)
         self.thread_unregister(__name__)
 
     def update_y_ticks_primary(self, y, pos):
@@ -260,7 +273,7 @@ class Plot(Sensor.Sensor):
                 yl2 = self._y_limits[0]
                 ml = (yl2[1] - yl2[0]) * AppConfig.plot.y_limit_scale_value
                 if y_max>yl2[1] or y_min<yl2[0] or (ts>yl2[2] and (y_min>yl2[0]+ml or y_min<yl2[1]-ml)):
-                    self.debug(__name__, 'limits %s' % ([yl2,y_min,y_max,ts,ml,tmp]))
+                    # self.debug(__name__, 'limits %s' % ([yl2,y_min,y_max,ts,ml,tmp]))
                     yl2[0] = y_min
                     yl2[1] = y_max
                     yl2[2] = ts + AppConfig.plot.y_limit_scale_time
