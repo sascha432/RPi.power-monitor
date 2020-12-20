@@ -37,7 +37,7 @@ class Plot(Sensor.Sensor):
         self.thread_unregister(__name__)
 
     def update_y_ticks_primary(self, y, pos):
-        if 0 in self._y_limits:
+        if len(self._y_limits):
             yl = self._y_limits[0]
             diff = yl[0] - yl[1]
             if diff<1.0:
@@ -48,11 +48,10 @@ class Plot(Sensor.Sensor):
         return '%.2f' % y
 
     def add_ticks(self):
-
+        self.ax[0].yaxis.set_major_locator(ticker.MaxNLocator(6))
         self.ax[0].yaxis.set_major_formatter(ticker.FuncFormatter(self.update_y_ticks_primary))
         self.ax[1].yaxis.set_major_formatter(ticker.FuncFormatter(self.update_y_ticks_secondary))
 
-        self.ax[0].yaxis.set_major_locator(ticker.MaxNLocator(6))
 
 # ymin, ymax = ax.get_ylim()
 # ax.set_yticks(np.round(np.linspace(ymin, ymax, N), 2))
@@ -143,17 +142,17 @@ class Plot(Sensor.Sensor):
             if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
                 values_type = 'I'
                 values, items = self.get_plot_values(0, 0)
-                self.plot_main_current_rounding = AppConfig.plot.main_current_rounding
+                self._main_plot_limits = (AppConfig.plot.current_top_margin, AppConfig.plot.current_bottom_margin, AppConfig.plot.current_rounding)
                 self.ax[0].set_ylabel('Current (A)', color=self.PLOT_TEXT, **self.PLOT_FONT)
             elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.POWER:
                 values_type = 'P'
                 values, items = self.get_plot_values(0, 1)
-                self.plot_main_current_rounding = AppConfig.plot.main_current_rounding
+                self._main_plot_limits = (AppConfig.plot.power_top_margin, AppConfig.plot.power_bottom_margin, AppConfig.plot.power_rounding)
                 self.ax[0].set_ylabel('Power (W)', color=self.PLOT_TEXT, **self.PLOT_FONT)
             elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.AGGREGATED_POWER:
                 values_type = 'Psum'
                 values, items = self.get_plot_values(0, 2)
-                self.plot_main_current_rounding = AppConfig.plot.main_power_rounding
+                self._main_plot_limits = (AppConfig.plot.power_top_margin, AppConfig.plot.power_bottom_margin, AppConfig.plot.power_rounding)
                 self.ax[0].set_ylabel('Aggregated Power (W)', color=self.PLOT_TEXT, **self.PLOT_FONT)
             else:
                 raise RuntimeError('set_main_plot: plot_primary_display %s' % (self._gui_config.plot_primary_display))
@@ -243,27 +242,25 @@ class Plot(Sensor.Sensor):
                 line.set_data(x_range, items)
 
                 # max. per channel
-                y_max1 = max(round(values.max_U(display_idx) * AppConfig.plot.voltage_top_margin, 2), channel.voltage + 0.02)
-                y_min1 = min(round(values.min_U(display_idx) * AppConfig.plot.voltage_bottom_margin, 2), channel.voltage - 0.02)
+                y_max1 = max(channel.voltage + 0.02, round(values.max_U(display_idx) * AppConfig.plot.voltage_top_margin / AppConfig.plot.voltage_rounding) * AppConfig.plot.voltage_rounding)
+                y_min1 = min(channel.voltage - 0.02, round(values.min_U(display_idx) * AppConfig.plot.voltage_bottom_margin / AppConfig.plot.voltage_rounding) * AppConfig.plot.voltage_rounding)
                 self.ax[channel.number].set_ylim(top=y_max1, bottom=y_min1)
-
 
             # axis 0 y limits
             if y_min==sys.maxsize:
                 y_min=0
             if y_max:
                 tmp = (y_max, y_min)
-                r = self.plot_main_current_rounding * 0.50001
-                y_max = max(tmp[0] + 0.02, int(y_max * AppConfig.plot.main_top_margin / self.plot_main_current_rounding + r) * self.plot_main_current_rounding)
-                y_min = min(tmp[1] - 0.02, max(0, int(y_min * AppConfig.plot.main_bottom_margin / self.plot_main_current_rounding + r) * self.plot_main_current_rounding))
+                y_max = max(tmp[0] + 0.02, round(y_max * self._main_plot_limits[0] / self._main_plot_limits[2]) * self._main_plot_limits[2])
+                y_min = min(tmp[1] - 0.02, max(0, round(y_min * self._main_plot_limits[1] / self._main_plot_limits[2]) * self._main_plot_limits[2]))
                 if y_max == y_min:
-                    y_max += self.plot_main_current_rounding
+                    y_max += self._main_plot_limits[2]
 
                 # limit y axis scaling to 5 seconds and a min. change of 5% except for increased limits
                 yl2 = self._y_limits[0]
                 ml = (yl2[1] - yl2[0]) * AppConfig.plot.y_limit_scale_value
                 if y_max>yl2[1] or y_min<yl2[0] or (ts>yl2[2] and (y_min>yl2[0]+ml or y_min<yl2[1]-ml)):
-                    # self.debug(__name__, 'limits %s' % ([yl2,y_min,y_max,ts,ml,tmp]))
+                    self.debug(__name__, 'limits %s' % ([yl2,y_min,y_max,ts,ml,tmp]))
                     yl2[0] = y_min
                     yl2[1] = y_max
                     yl2[2] = ts + AppConfig.plot.y_limit_scale_time

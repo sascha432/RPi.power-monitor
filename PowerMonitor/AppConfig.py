@@ -71,26 +71,20 @@ class Plot(Base):
 
     display_energy = EnumConverter.value(Enums.DISPLAY_ENERGY.AH, Enums.DISPLAY_ENERGY)
 
-    main_top_margin = MarginConverter.top_value(5), #TODO remove
-    main_bottom_margin = MarginConverter.bottom_value(5), #TODO remove
-
-    main_current_rounding = 0.25 #TODO remove
-    main_power_rounding = 0.5 #TODO remove
-
-    current_top_margin = MarginConverter.top_value(5),#TODO add
-    current_bottom_margin = MarginConverter.bottom_value(5),#TODO add
-    current_rounding = 0.1#TODO add
+    current_top_margin = MarginConverter.top_value(5),                  # +5% / 105%
+    current_bottom_margin = MarginConverter.bottom_value(15),           # -15% / 85%
+    current_rounding = 0.1                                              # 100mA
 
     power_top_margin = MarginConverter.top_value(5),#TODO add
     power_bottom_margin = MarginConverter.bottom_value(5),#TODO add
-    power_rounding = 0.5 #TODO add
+    power_rounding = 0.5                                                # 0.5W
 
     y_limit_scale_time = TimeConverter.value(5.0)
     y_limit_scale_value = 0.05
 
-    voltage_top_margin = MarginConverter.top_value(0.5),
-    voltage_bottom_margin = MarginConverter.bottom_value(0.5),
-    voltage_rouding = 0.01#TODO add
+    voltage_top_margin = MarginConverter.top_value(2.5),
+    voltage_bottom_margin = MarginConverter.bottom_value(2.5),
+    voltage_rounding = 0.1                                              # 100mV
 
     def __init__(self, struct):
         Base.__init__(self, struct)

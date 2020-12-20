@@ -61,7 +61,9 @@ class JsonReader(object):
                 param = obj._get_param(key)
                 if not param.is_type_allowed(val):
                     raise KeyError("%s: type '%s' not allowed: %s" % (path + key, Type.name(val), param.types))
-                val = param.prepare_value(val)
+                # validate value
+                param.prepare_value(val)
+                # store raw value
                 json[key] = val
 
     def loads_from(self, file):
