@@ -50,7 +50,7 @@ class Plot(Sensor.Sensor):
         self.thread_unregister(__name__)
 
     def update_y_ticks_primary(self, y, pos):
-        if len(self._y_limits):
+        if len(self._y_limits) and self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
             yl = self._y_limits[0]
             diff = yl[0] - yl[1]
             if diff<1.0:
@@ -70,7 +70,7 @@ class Plot(Sensor.Sensor):
 # ax.set_yticks(np.round(np.linspace(ymin, ymax, N), 2))
 
     def legend(self):
-        self.ax[0].legend(['%u seconds' % self.get_time_scale()], handlelength=0, fontsize='x-small', labelcolor=self.TEXT_COLOR, loc='lower center', frameon=False, borderpad=0.0, borderaxespad=0.2)
+        self.ax[0].legend(['%u seconds' % self.get_time_scale()], handlelength=0, fontsize=self._fonts.plot_font.cget('size'), labelcolor=self.TEXT_COLOR, loc='lower center', frameon=False, borderpad=0.0, borderaxespad=0.2)
 
     def get_plot_geometry(self, plot_number):
         if plot_number==0:
@@ -85,7 +85,7 @@ class Plot(Sensor.Sensor):
                 return 100 + (len(self.channels) * 10) + (plot_number)
 
         # fix
-        return 111
+        return None
 
     def get_time_scale_list(self):
         _max_time = AppConfig.plot.max_time
@@ -150,23 +150,24 @@ class Plot(Sensor.Sensor):
         if not self.lock.acquire(True):
             return
         try:
+            yfont = {'fontsize': int(self._fonts.plot_font.cget('size') * 1.3)}
             self.power_sum = []
             self.clear_y_limits(0)
             if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
                 values_type = 'I'
                 values, items = self.get_plot_values(0, 0)
                 self._main_plot_limits = (AppConfig.plot.current_top_margin, AppConfig.plot.current_bottom_margin, AppConfig.plot.current_rounding)
-                self.ax[0].set_ylabel('Current (A)', color=self.PLOT_TEXT, **self.PLOT_FONT)
+                self.ax[0].set_ylabel('Current (A)', color=self.PLOT_TEXT, **yfont)
             elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.POWER:
                 values_type = 'P'
                 values, items = self.get_plot_values(0, 1)
                 self._main_plot_limits = (AppConfig.plot.power_top_margin, AppConfig.plot.power_bottom_margin, AppConfig.plot.power_rounding)
-                self.ax[0].set_ylabel('Power (W)', color=self.PLOT_TEXT, **self.PLOT_FONT)
+                self.ax[0].set_ylabel('Power (W)', color=self.PLOT_TEXT, **yfont)
             elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.AGGREGATED_POWER:
                 values_type = 'Psum'
                 values, items = self.get_plot_values(0, 2)
                 self._main_plot_limits = (AppConfig.plot.power_top_margin, AppConfig.plot.power_bottom_margin, AppConfig.plot.power_rounding)
-                self.ax[0].set_ylabel('Aggregated Power (W)', color=self.PLOT_TEXT, **self.PLOT_FONT)
+                self.ax[0].set_ylabel('Aggregated Power (W)', color=self.PLOT_TEXT, **yfont)
             else:
                 raise RuntimeError('set_main_plot: plot_primary_display %s' % (self._gui_config.plot_primary_display))
 
@@ -273,7 +274,7 @@ class Plot(Sensor.Sensor):
                 yl2 = self._y_limits[0]
                 ml = (yl2[1] - yl2[0]) * AppConfig.plot.y_limit_scale_value
                 if y_max>yl2[1] or y_min<yl2[0] or (ts>yl2[2] and (y_min>yl2[0]+ml or y_min<yl2[1]-ml)):
-                    # self.debug(__name__, 'limits %s' % ([yl2,y_min,y_max,ts,ml,tmp]))
+                    # self.debug(__name__, 'limits %' % ([yl2,y_min,y_max,ts,ml,tmp]))
                     yl2[0] = y_min
                     yl2[1] = y_max
                     yl2[2] = ts + AppConfig.plot.y_limit_scale_time

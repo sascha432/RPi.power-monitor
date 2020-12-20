@@ -6,7 +6,7 @@ import tkinter as tk
 import traceback
 import sys
 import copy
-from . import Enums
+from . import Enums, Tools
 from Config import Param, EnumConverter
 
 class Gui(tk.Tk):
@@ -81,7 +81,7 @@ class Gui(tk.Tk):
 
         if AppConfig.gui.fullscreen:
             if not 'win' in sys.platform:
-                self.attributes('-zoomed', True)
+                # self.attributes('-zoomed', True)
                 self.toggle_fullscreen()
 
         for binding in (dir(AppConfig.gui.key_bindings)):
@@ -92,8 +92,7 @@ class Gui(tk.Tk):
 
                 for key in keys:
                     try:
-                        tmp = copy.copy(func)
-                        self.bind(key, lambda event: self.handle_bind_event(tmp, event))
+                        self.bind(key, Tools.LambdaCaller(self.handle_bind_event, (func,)))
                     except Exception as e:
                         raise ValueError('invalid key binding: %s: %s: %s' % (key, str(func), e))
 
@@ -108,6 +107,7 @@ class Gui(tk.Tk):
             else:
                 self.config(cursor='')
             self._parent.set_screen_update_rate(self.fullscreen_state)
+            self._parent.window_resize()
         return "break"
 
     def end_fullscreen(self, event=None):
@@ -116,4 +116,5 @@ class Gui(tk.Tk):
             self.attributes("-fullscreen", False)
             self.config(cursor='')
             self._parent.set_screen_update_rate(False)
+        self._parent.window_resize()
         return "break"

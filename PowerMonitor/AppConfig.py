@@ -16,14 +16,14 @@ class App(Base):
     config_file = ('{config_dir}/config.json', (Param.ReadOnly,))
     energy_storage_file = '{config_dir}/energy.json'
 
-    headless = False
-    verbose = False
-    daemon = False
-
     store_energy_interval = TimeConverter.value(60)
 
     idle_check_interval = TimeConverter.value(2, 's')
     idle_check_cmd = '/usr/bin/xset -display "{DISPLAY}" q | /bin/grep "Monitor is On"'
+
+    headless = False
+    verbose = False
+    daemon = False
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)
@@ -102,6 +102,8 @@ class Gui(Base):
     title = 'Power Monitor'
     fullscreen = True
     display = '$DISPLAY'
+    geometry = "800x480x1.0"
+    color_scheme = Enums.COLOR_SCHEME.DEFAULT
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)

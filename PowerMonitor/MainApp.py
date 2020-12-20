@@ -9,8 +9,10 @@ from . import *
 # from . import Mqtt
 from Config.Type import Type
 from .AppConfig import Channel
+from .Enums import COLOR_SCHEME
 import SDL_Pi_INA3221
 from SDL_Pi_INA3221.Calibration import Calibration
+from collections import namedtuple
 import sys
 import time
 import numpy as np
@@ -164,15 +166,8 @@ class MainApp(MainAppCli):
         self._app_config = app_config
         self._bases = Tools.get_bases(self.__module__, self.__class__.__qualname__)
 
-        class LambdaCaller:
-            def __init__(self, self_obj, func_name):
-                self._func_name = func_name
-                self._self_obj = self_obj
-            def __call__(self, *args, **kwargs):
-                Tools.execute_method(self._self_obj, self._self_obj._bases, self._func_name, *args, **kwargs)
-
         for func_name in ('start', 'destroy', 'reload', 'init_vars'):
-            obj = LambdaCaller(self, func_name)
+            obj = Tools.LambdaCaller(Tools.execute_method, (self, self._bases, func_name))
             setattr(self, func_name, obj)
 
         for class_type in self._bases:
@@ -245,9 +240,10 @@ class MainApp(MainAppCli):
         self.debug(__name__, 'starting with GUI')
 
         def import_gui():
-            global Gui, tk, ttk, tkinter, animation, Figure, FigureCanvasTkAgg, NavigationToolbar2Tk
+            global Gui, tk, ttk, font, tkinter, animation, Figure, FigureCanvasTkAgg, NavigationToolbar2Tk
             from .Gui import Gui
             import tkinter
+            from tkinter import font
             import tkinter as tk
             from tkinter import ttk
             import tkinter.messagebox
@@ -260,11 +256,6 @@ class MainApp(MainAppCli):
         self.read_gui_config()
 
         self._gui = Gui(self)
-
-        # set to false for OLED
-        self.desktop = True
-        self.color_schema_dark = True
-        self.monochrome = False
 
         # color scheme and screen size
         self.init_scheme()
@@ -283,14 +274,15 @@ class MainApp(MainAppCli):
 
         # axis
 
-        ax = self.fig.add_subplot(self.get_plot_geometry(0), facecolor=self.PLOT_BG)
+        ax = self.fig.add_subplot(131, facecolor=self.PLOT_BG)
         ax.autoscale(False)
         ax.margins(0.01, 0.01)
         self.ax.append(ax)
 
         for channel in self.channels:
-            n = self.get_plot_geometry(channel.number)
-            self.ax.append(self.fig.add_subplot(n, facecolor=self.PLOT_BG))
+            self.ax.append(self.fig.add_subplot((331 + int(channel)), facecolor=self.PLOT_BG))
+
+        self.set_plot_geometry()
 
         for ax in self.ax:
             ax.grid(True, color=self.PLOT_GRID, axis='both')
@@ -300,19 +292,20 @@ class MainApp(MainAppCli):
         ticks_params = {
             'labelcolor': self.PLOT_TEXT,
             'axis': 'y',
-            'labelsize': self.PLOT_FONT['fontsize'] - 1,
+            'labelsize': self._fonts.plot_font.cget('size'),
             'width': 0,
             'length': 0,
             'pad': 1
         }
 
         # self.ax[0].set_ylabel('Current (A)', color=self.PLOT_TEXT, **self.PLOT_FONT)
-        self.ax[0].tick_params(**ticks_params)
+        # self.ax[0].tick_params(**ticks_params)
+        for ax in self.ax:
+            ax.tick_params(**ticks_params)
 
         for channel in self.channels:
             ax = self.ax[channel.number]
             ax.ticklabel_format(axis='y', style='plain', scilimits=(0, 0), useOffset=False)
-            ax.tick_params(**ticks_params)
 
         # lines
 
@@ -327,9 +320,13 @@ class MainApp(MainAppCli):
 
         # top labels
 
-        label_font_size = [32, 28, 18]
+        # label_font_size = [32, 28, 18]
+
+        # self._fonts.label_font.configure(size=label_font_size[len(self.channels) - 1])
+        # setattr(self._fonts.label_font, '_org_size', label_font_size[len(self.channels) - 1])
+
         label_config = {
-            'font': (self.TOP_FONT, label_font_size[len(self.channels) - 1]),
+            'font': self._fonts.label_font,
             'bg': self.BG_COLOR,
             'fg': 'white',
             'anchor': 'center'
@@ -359,7 +356,7 @@ class MainApp(MainAppCli):
             self.debug(__name__, 'failed to write GUI config: %s', e)
             gui = {}
 
-        gui['geometry'] = self.geometry_info
+        gui['geometry'] = self._geometry_info
 
         padding_y = { 1: 100, 2: 70, 3: 70 }
         pady = -1 / padding_y[len(self.channels)]
@@ -451,7 +448,7 @@ class MainApp(MainAppCli):
         self.popup_hide_timeout = None
 
         if AppConfig._debug:
-            label = tk.Label(self._gui, text="", font=('Verdana', 12), bg='#333333', fg=self.TEXT_COLOR, anchor='nw', wraplength=800)
+            label = tk.Label(self._gui, text="", font=('Verdana', 12), bg='#333333', fg=self.TEXT_COLOR, anchor='nw', wraplength=self._gui.winfo_width()) #self._geometry_info[0])
             label.pack()
             label.place(in_=top, relx=0.0, rely=1.0-0.135 + 2.0, relwidth=1.0, relheight=0.13)
             self.debug_label = label
@@ -462,8 +459,26 @@ class MainApp(MainAppCli):
         except Exception as e:
             self.debug(__name__, 'failed to write GUI config: %s', e)
 
-
         self._gui.init_bindings()
+
+    def window_resize(self):
+        pass
+        # if self._gui.fullscreen_state:
+        #     self._geometry_info = (800, 480, 1.0)#TODO get real size
+        # else:
+        #     tmp = AppConfig.gui.geometry.split('x')
+        #     self._geometry_info = (int(tmp[0]), int(tmp[1]), float(tmp[2]))
+
+        # self.debug_label.configure(wraplength=self._geometry_info[0])
+        # self._fonts.top_font.configure(size=int(self._fonts.top_font._org_size * self._geometry_info[2]))
+        # self._fonts.plot_font.configure(size=int(self._fonts.plot_font._org_size * self._geometry_info[2]))
+        # self._fonts.debug_font.configure(size=int(self._fonts.debug_font._org_size * self._geometry_info[2]))
+        # self._fonts.label_font.configure(size=int(self._fonts.label_font._org_size * self._geometry_info[2]))
+
+        # for ax in self.ax:
+        #     ax.tick_params(labelsize=self._fonts.plot_font.cget('size'))
+        # self.legend()
+
 
 
     def destroy(self):
@@ -481,61 +496,56 @@ class MainApp(MainAppCli):
             self._gui.quit()
 
     def init_scheme(self):
-        if not self.desktop:
-            self.geometry_info = (128, 64, 2.0)
-        else:
-            self.geometry_info = (800, 480, 1.0)
 
-        self._gui.geometry("%ux%u" % (self.geometry_info[0], self.geometry_info[1]))
-        self._gui.tk.call('tk', 'scaling', self.geometry_info[2])
+        tmp = AppConfig.gui.geometry.split('x')
+        self._geometry_info = (int(tmp[0]), int(tmp[1]), float(tmp[2]))
+        self._gui.geometry("%ux%u" % (self._geometry_info[0], self._geometry_info[1]))
+        self._gui.tk.call('tk', 'scaling', self._geometry_info[2])
 
-        if self.color_schema_dark:
+        if AppConfig.gui.color_scheme == COLOR_SCHEME.DARK:
             self.BG_COLOR = 'black'
             self.TEXT_COLOR = 'white'
             self.PLOT_TEXT = self.TEXT_COLOR
             self.PLOT_GRID = 'gray'
             self.PLOT_BG = "#303030"
-        else:
+            self.FG_CHANNEL0 = 'red'
+            self.FG_CHANNEL1 = 'lime'
+            self.FG_CHANNEL2 = 'deepskyblue'
+            self.FG_CHANNEL3 = '#b4b0d1' # 'lavender'
+        elif AppConfig.gui.color_scheme == COLOR_SCHEME.LIGHT:
+            self.FG_CHANNEL0 = 'red'
+            self.FG_CHANNEL1 = 'green'
+            self.FG_CHANNEL2 = 'blue'
+            self.FG_CHANNEL3 = 'aqua'
             self.BG_COLOR = 'white'
             self.TEXT_COLOR = 'black'
             self.PLOT_TEXT = self.TEXT_COLOR
             self.PLOT_GRID = 'black'
             self.PLOT_BG = "#f0f0f0"
-
-        if self.monochrome:
-            self.FG_CHANNEL0 = 'white'
-            self.FG_CHANNEL1 = 'white'
-            self.FG_CHANNEL2 = 'white'
-            self.FG_CHANNEL3 = 'white'
         else:
-            if self.color_schema_dark:
-                self.FG_CHANNEL0 = 'red'
-                self.FG_CHANNEL1 = 'lime'
-                self.FG_CHANNEL2 = 'deepskyblue'
-                self.FG_CHANNEL3 = '#b4b0d1' # 'lavender'
-            else:
-                self.FG_CHANNEL0 = 'red'
-                self.FG_CHANNEL1 = 'green'
-                self.FG_CHANNEL2 = 'blue'
-                self.FG_CHANNEL3 = 'aqua'
+            raise ValueError('invalid color scheme')
 
         Channel.COLOR_AGGREGATED_POWED = self.FG_CHANNEL0
         AppConfig.channels[0].color = self.FG_CHANNEL1
         AppConfig.channels[1].color = self.FG_CHANNEL2
         AppConfig.channels[2].color = self.FG_CHANNEL3
 
-        if self.desktop:
-            self.TOP_FONT = "DejaVu Sans"
-            self.PLOT_FONT = {'fontname': 'DejaVu Sans', 'fontsize': 9}
-            self.TOP_PADDING = (2, 20)
-            self.PLOT_DPI = 200
-            self.LABELS_PADX = 10
-        else:
-            self.TOP_FONT = "Small Pixel7"
-            self.PLOT_FONT = {'fontname': 'Small Pixel7'}
-            self.TOP_PADDING = (0, 1)
-            self.PLOT_DPI = 43
-            self.LABELS_PADX = 1
+
+        self._fonts = namedtuple('GuiFonts', ['top_font', 'plot_font', 'debug_font', 'label_font'])
+        self._fonts.top_font = font.Font(family='Helvetica', size=20)
+        self._fonts.plot_font = font.Font(family='Helvetica', size=8)
+        self._fonts.debug_font = font.Font(family='Helvetica', size=10)
+        label_font_size = (32, 28, 18)
+        self._fonts.label_font = font.Font(family='Helvetica', size=label_font_size[len(self.channels) - 1])
+
+        for name in self._fonts._fields:
+            tmp = getattr(self._fonts, name)
+            setattr(tmp, '_org_size', tmp.cget('size'))
+
+        self.TOP_FONT = "DejaVu Sans"
+        self.TOP_PADDING = (2, 20)
+        self.PLOT_DPI = 200
+        self.LABELS_PADX = 10
 
     def animation_set_state(self, pause=True, interval=None):
         self.lock.acquire()
@@ -588,16 +598,21 @@ class MainApp(MainAppCli):
     def get_gui_scheme_config_filename(self, auto=''):
         if auto==True:
             auto = '-auto'
-        return 'gui-%u-%ux%u%s.json' % (len(self.channels), self.geometry_info[0], self.geometry_info[1], auto)
+        return 'gui-%u-%ux%u%s.json' % (len(self.channels), self._geometry_info[0], self._geometry_info[1], auto)
+        # self._geometry_info[1], auto)
 
     def toggle_debug(self, event=None):
         self.debug_label_state = (self.debug_label_state + 1) % 3
         if self.debug_label_state==0:
             self.debug_label.place(rely=1.0-0.135, relheight=0.13)
-            self.debug_label.configure(font=('Verdana', 10))
+            self._fonts.debug_font.configure(size=10)
+            self.debug_label.configure(font=self._fonts.debug_font)
+            # self.debug_label.configure(font=('Verdana', 10))
         if self.debug_label_state==1:
             self.debug_label.place(rely=1.0-0.255, relheight=0.25)
-            self.debug_label.configure(font=('Verdana', 18))
+            # self.debug_label.configure(font=('Verdana', 18))
+            self._fonts.debug_font.configure(size=18)
+            self.debug_label.configure(font=self._fonts.debug_font)
         if self.debug_label_state==2:
             self.debug_label.place(rely=1.1, relheight=0.1)
         return 'break'
@@ -630,10 +645,10 @@ class MainApp(MainAppCli):
 
     def button_1(self, event):
 
-        x = int(event.x / (self.geometry_info[0] / 8))
-        y = int(event.y / (self.geometry_info[1] / 4))
+        x = int(event.x / (self._geometry_info[0] / 8))
+        y = int(event.y / (self._geometry_info[1] / 4))
 
-        self.debug(__name__, 'button1 %u:%u %.2fx%.2f' % (x, y, self.geometry_info[0] / 8, self.geometry_info[1] / 4))
+        self.debug(__name__, 'button1 %u:%u %.2fx%.2f' % (x, y, self._geometry_info[0] / 8, self._geometry_info[1] / 4))
 
         if x<=1 and y==0:
             self.toggle_time_scale(-1)
@@ -664,8 +679,8 @@ class MainApp(MainAppCli):
         return "break"
 
     def debug_bind(self, event=None):
-        # x = int(event.x / (self.geometry_info[0] / 6))
-        # y = int(event.y / (self.geometry_info[1] / 3))
+        # x = int(event.x / (self._geometry_info[0] / 6))
+        # y = int(event.y / (self._geometry_info[1] / 3))
         # self.debug(__name__, '%d %d %s' % (x,y,str(event)))
         self.debug(__name__, event)
         return "break"
@@ -677,26 +692,31 @@ class MainApp(MainAppCli):
 
     def toggle_plot_visibility(self, event=None):
         self._gui_config.plot_visibility = Tools.EnumIncr(self._gui_config.plot_visibility)
+        self.set_plot_geometry
+        self.canvas.draw()
+        return 'break'
+
+    def set_plot_geometry(self):
         idx = 0
         for ax in self.ax:
             n = self.get_plot_geometry(idx)
-            self.debug(__name__, 'idx=%u v=%s get_plot_geometry=%s', idx, str(self._gui_config.plot_visibility), s)
+            self.debug(__name__, 'idx=%u visibility=%s get_plot_geometry=%s', idx, str(self._gui_config.plot_visibility), n)
             if n!=None:
                 ax.set_visible(True)
                 ax.change_geometry(int(n / 100) % 10, int(n / 10) % 10, int(n) % 10)
             elif ax:
                 ax.set_visible(False)
             idx += 1
-        self.canvas.draw()
-        return 'break'
 
     def toggle_primary_display(self, event=None):
         self._gui_config.plot_primary_display = Tools.EnumIncr(self._gui_config.plot_primary_display)
         self.set_main_plot()
+        self.canvas.draw()
         return 'break'
 
     def toggle_display_energy(self, event=None):
         self._gui_config.plot_display_energy = Tools.EnumIncr(self._gui_config.plot_display_energy)
+        self.canvas.draw()
         return 'break'
 
     def show_popup(self, msg, timeout=3.5):

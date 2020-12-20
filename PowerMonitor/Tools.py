@@ -48,6 +48,12 @@ def execute_method(self_obj, classes, func_name, *args, **kwargs):
             if callable(func):
                 func(self_obj, *args, **kwargs)
 
+class LambdaCaller:
+    def __init__(self, func_name, args):
+        self._func_name = func_name
+        self._args = args
+    def __call__(self, *args, **kwargs):
+        self._func_name(*self._args, *args, **kwargs)
 
 def EnumFromStr(cls, value, ignore_case=True,namespace=None):
     if isinstance(value, str):
@@ -75,4 +81,3 @@ def EnumDecr(value):
     l = list(type(value))
     n = (value._value_ - 1 + len(l)) % len(l)
     return l[n]
-

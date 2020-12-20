@@ -5,6 +5,7 @@
 from . import *
 import sys
 import copy
+from enum import Enum
 
 class DEFAULT():
     def __init__(self, value):
@@ -132,6 +133,11 @@ class Param(object):
     def is_type_allowed(self, value):
         if Param.ReadOnly==self.types:
             return False
+        if isinstance(self._default, Enum) and self._converter==None:
+            from .Converter import EnumConverter
+            self._converter = EnumConverter(type(self._default))
+            self._types = Type((str, int, float, type(self._default)))
+
         if isinstance(value, int) and float==self.types:
             return True
         return type(value)==self.types
@@ -153,8 +159,8 @@ class Param(object):
     def finalize(self, path):
         if callable(self.default):
             self._default = self.default(path)
-            if self.types==None:
-                self._types = Type(type(self.default))
+        if self.types==None:
+            self._types = Type(type(self.default))
 
     #
     # create Param object
