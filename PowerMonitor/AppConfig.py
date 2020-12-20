@@ -3,10 +3,10 @@
 #
 
 from SDL_Pi_INA3221.Calibration import Calibration as InaCalibration
+from SDL_Pi_INA3221 import INA3211_CONFIG
 from Config import (Type, Path, Param, DictType, TimeConverter, MarginConverter, RangeConverter, ListConverter, EnumConverter, Base, ListBase, ItemBase)
 from . import Enums
 from .Gui import Gui
-
 
 class App(Base):
 
@@ -21,6 +21,9 @@ class App(Base):
     daemon = False
 
     store_energy_interval = TimeConverter.value(60)
+
+    idle_check_interval = TimeConverter.value(2, 's')
+    idle_check_cmd = '/usr/bin/xset -display "{DISPLAY}" q | /bin/grep "Monitor is On"'
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)
@@ -61,23 +64,33 @@ class Channel(ItemBase):
 
 class Plot(Base):
     refresh_interval = TimeConverter.value(250, 'ms')
-    idle_refresh_interval = TimeConverter.value(2500, 'ms')
-    max_values = 512
-    max_time = TimeConverter.value(300)
+    idle_refresh_interval = TimeConverter.value(30000, 'ms')
+    max_values = 8192
+    max_time = TimeConverter.value(900)
     line_width = 1.0
 
     display_energy = EnumConverter.value(Enums.DISPLAY_ENERGY.AH, Enums.DISPLAY_ENERGY)
 
-    main_top_margin = MarginConverter.top_value(5),
-    main_bottom_margin = MarginConverter.bottom_value(20),
-    main_current_rounding = 0.25
-    main_power_rounding = 0.5
+    main_top_margin = MarginConverter.top_value(5), #TODO remove
+    main_bottom_margin = MarginConverter.bottom_value(5), #TODO remove
 
-    main_y_limit_scale_time = TimeConverter.value(5.0)
-    main_y_limit_scale_value = 0.05
+    main_current_rounding = 0.25 #TODO remove
+    main_power_rounding = 0.5 #TODO remove
+
+    current_top_margin = MarginConverter.top_value(5),#TODO add
+    current_bottom_margin = MarginConverter.bottom_value(5),#TODO add
+    current_rounding = 0.1#TODO add
+
+    power_top_margin = MarginConverter.top_value(5),#TODO add
+    power_bottom_margin = MarginConverter.bottom_value(5),#TODO add
+    power_rounding = 0.5 #TODO add
+
+    y_limit_scale_time = TimeConverter.value(5.0)
+    y_limit_scale_value = 0.05
 
     voltage_top_margin = MarginConverter.top_value(0.5),
     voltage_bottom_margin = MarginConverter.bottom_value(0.5),
+    voltage_rouding = 0.01#TODO add
 
     def __init__(self, struct):
         Base.__init__(self, struct)
@@ -85,7 +98,7 @@ class Plot(Base):
 class PlotCompression(Base):
 
     min_records = 100
-    uncompressed_time = TimeConverter.value(60)
+    uncompressed_time = TimeConverter.value(15)
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)
@@ -112,26 +125,16 @@ class KeyBindings(Base):
     reset_plot = ('<Control-F10>', (str,))
     menu = ('<F1>', (str,))
     quit = ('<Alt-F4>', (str,))
-    wakeup = ('<Enter>,<Leave>,<Motion>', (str,))
 
     def __init__(self, struct={}):
-        Base.__init__(self, struct)
-
-class Backlight(Base):
-
-    pwm_threshold = 20
-    check_interval = TimeConverter.value(5, 's')
-
-    def __init__(self, struct=DictType({
-            'gpio': Param(None, (int, None))
-        })):
         Base.__init__(self, struct)
 
 class Ina3221(Base):
 
     i2c_address = 0x040
-    read_delay = TimeConverter.value(0.125, 's')
-    averaging_mode = ListConverter.value(128, [1, 4, 16, 64, 128, 256, 512, 1024], (int,))
+    averaging_mode = EnumConverter.value(INA3211_CONFIG.AVERAGING_MODE.x512, INA3211_CONFIG.AVERAGING_MODE)
+    vshunt_conversion_time = EnumConverter.value(INA3211_CONFIG.VSHUNT_CONVERSION_TIME.time_140_us, INA3211_CONFIG.VSHUNT_CONVERSION_TIME)
+    vbus_conversion_time = EnumConverter.value(INA3211_CONFIG.VBUS_CONVERSION_TIME.time_140_us, INA3211_CONFIG.VBUS_CONVERSION_TIME)
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)
@@ -154,11 +157,6 @@ class Mqtt(Base):
 
     payload_online = '1'
     payload_offline = '0'
-
-    motion_topic = '{topic_prefix}/{device_name}/motion_detection'
-    motion_payload = (None, (int, str), lambda val, param: str(val))
-    motion_retain = False
-    motion_repeat_delay = TimeConverter.value(30)
 
     # consts
 
@@ -187,9 +185,6 @@ class Mqtt(Base):
 
     def get_status_topic(self):
         return self._format_topic(self.STATUS_TOPIC)
-
-    def get_motion_topic(self, timestamp):
-        return self._format_topic(self.motion_topic, ts=timestamp)
 
     def get_auto_discovery_topic(self, channel, entity):
         return self._format_topic(self.AUTO_DISCOVERY_TOPC, channel=channel, entity=entity)

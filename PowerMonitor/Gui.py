@@ -32,10 +32,6 @@ class Gui(tk.Tk):
     def fullscreen_state(self, state):
         self._parent.fullscreen_state = state
 
-    @property
-    def has_backlight(self):
-        return self._parent.backlight_on!=None
-
     def report_callback_exception(self, exc, val, tb):
         self._parent.debug(__name__, 'tkinter exception: %s', exc)
         if 'shape mismatch' in str(exc):
@@ -76,8 +72,6 @@ class Gui(tk.Tk):
             self._parent.reset_values()
         elif func==Enums.KEY_BINDINGS.MENU:
             pass
-        elif func==Enums.KEY_BINDINGS.WAKEUP:
-            self._parent.wake_up()
         elif func==Enums.KEY_BINDINGS.QUIT:
             self.destroy()
         else:
@@ -100,9 +94,6 @@ class Gui(tk.Tk):
                 keys = value.split(',')
                 func = EnumConverter.EnumFromStr(Enums.KEY_BINDINGS, binding)
 
-                if func==Enums.KEY_BINDINGS.WAKEUP and not self.has_backlight:
-                    continue
-
                 for key in keys:
                     try:
                         tmp = copy.copy(func)
@@ -110,24 +101,7 @@ class Gui(tk.Tk):
                     except Exception as e:
                         raise ValueError('invalid key binding: %s: %s: %s' % (key, str(func), e))
 
-
-        # if :
-        #     self.bind("<Enter>", self._parent.wake_up)
-        #     self.bind("<Leave>", self._parent.wake_up)
-        #     self.bind("<Motion>", self._parent.wake_up)
-
         self._parent.canvas.get_tk_widget().bind('<Button-1>', self._parent.button_1)
-
-        # self.bind("<Control-t>", self._parent.store_values)
-        # self.bind("<F1>", lambda a: self._parent.reset_values())
-        # self.bind("<F2>", self._parent.toggle_plot_visibility)
-        # self.bind("<F3>", self._parent.toggle_main_plot)
-        # self.bind("<F4>", self._parent.toggle_display_energy)
-        # self.bind("<F8>", self._parent.reload_gui)
-        # self.bind("<F9>", self._parent.reload_config)
-        # self.bind("<F10>", self._parent.toggle_debug)
-        # self.bind("<F11>", self.toggle_fullscreen)
-        # self.bind("<Escape>", self.end_fullscreen)
 
     def toggle_fullscreen(self, event=None):
         if not 'win' in sys.platform:

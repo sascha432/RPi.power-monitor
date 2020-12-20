@@ -2,7 +2,7 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from Config import (Loader, Merger, DictType, RangeType, Param, JsonReader, YamlWriter, JsonWriter)
+from Config import (Loader, Merger, DictType, RangeType, Param, JsonReader, YamlWriter, JsonWriter, Writer)
 from os import path
 from PowerMonitor import AppConfig
 
@@ -26,25 +26,29 @@ class Config:
             'plot': AppConfig.Plot(DictType({
                 'compression': AppConfig.PlotCompression()
             })),
-            'gui': AppConfig.Gui(),
+            'gui': AppConfig.Gui({
+                'key_bindings' : AppConfig.KeyBindings()
+            }),
             'mqtt': AppConfig.Mqtt(),
-            'backlight': AppConfig.Backlight()
+            'ina3221': AppConfig.Ina3221(),
         })))
+        self._loader = loader
 
         reader = JsonReader(loader.root, False)
         config = reader.loads_from(file)
 
-        writer = YamlWriter(loader.root)
-        writer.dumps(skip_root_name=True)
-
         merger = Merger(loader.root)
         merger.merge(config)
 
-        if output=='yaml':
-            writer = YamlWriter(loader.root)
-            writer.dumps(skip_root_name=True)
-        elif output=='json':
-            writer = JsonWriter(loader.root)
-            writer.dumps()
-
         return loader.root_object
+
+    def print_config(self, output, section):
+        if output=='yaml':
+            writer = YamlWriter(self._loader.root, section=section)
+            writer.dumps(skip_root_name=True)
+        elif output=='raw':
+            writer = Writer(self._loader.root, section=section)
+            writer.dumps()
+        elif output=='json':
+            writer = JsonWriter(self._loader.root, section=section)
+            writer.dumps()

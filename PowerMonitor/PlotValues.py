@@ -4,7 +4,6 @@
 
 from PowerMonitor.AppConfig import Channel
 import numpy as np
-
 class PlotValues(object):
     def __init__(self, channel: Channel):
         self._channel = channel
@@ -120,8 +119,8 @@ class PlotValuesContainer(object):
             return self._values[int(key)]
         return self._values[key]
 
-    def append_time(self, list):
-        self._t += list
+    # def append_time(self, list):
+    #     self._t += list
 
     def max_time(self):
         if self._t:

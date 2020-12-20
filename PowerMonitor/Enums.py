@@ -38,4 +38,3 @@ class KEY_BINDINGS(enum.Enum):
     RESET_PLOT = 8
     QUIT = 9
     MENU = 10
-    WAKEUP = 11
