@@ -8,6 +8,7 @@ import sys
 import os
 import socket
 import argparse
+import threading
 from Config import (JsonWriter, YamlWriter)
 from PowerMonitor.MainApp import MainApp
 from PowerMonitor import AppConfig
@@ -21,7 +22,8 @@ parser.add_argument('--fullscreen', help='start in fullscreen mode', action='sto
 parser.add_argument('--daemon', help='run as daemon', action='store_true', default=None)
 parser.add_argument('--verbose', help='enable debug output', action='store_true', default=None)
 parser.add_argument('--check', help='check configuration', action='store_true', default=None)
-parser.add_argument('--print', help='check and display configuration', choices=['json', 'yaml'], default=None)
+parser.add_argument('--print', help='check and display configuration', choices=['json', 'yaml', 'raw'], default=None)
+parser.add_argument('--section', help='config section to display', type=str, default=None)
 parser.add_argument('--debug', help='enable debug mode', action='store_true', default=None)
 
 args = parser.parse_args()
@@ -34,10 +36,9 @@ if args.print:
 AppConfig.Mqtt.device_name = socket.gethostname()
 AppConfig.config_dir = args.config_dir
 
-
 try:
     config = Config(args.config_dir)
-    root_object = config.load(config.get_filename('config.json'), args.print)
+    root_object = config.load(config.get_filename('config.json'))
 except Exception as e:
     if args.debug:
         raise e
@@ -64,6 +65,13 @@ default_handler = logging.StreamHandler(stream=sys.stdout)
 default_handler.setLevel(AppConfig.verbose and logging.DEBUG or logging.INFO)
 logger = logging.getLogger('power_monitor')
 logger.setLevel(logging.DEBUG)
+try:
+    import colorlog
+    default_handler.setFormatter(colorlog.ColoredFormatter('%(log_color)s%(levelname)s:%(message)s'))
+    # default_handler.setFormatter(colorlog.ColoredFormatter('%(log_color)s%(levelname)s:%(name)s:%(message)s'))
+    default_handler.setFormatter(formatter)
+except:
+    pass
 logger.addHandler(default_handler)
 
 if AppConfig.headless!=True:
@@ -76,17 +84,17 @@ if AppConfig.headless!=True:
         os.environ['DISPLAY'] = AppConfig.gui.display
 
 if args.check:
-
-    print()
-    print('OK')
+    if args.print==None:
+        print('OK')
+    else:
+        config.print_config(args.print, args.section)
     sys.exit(0)
 
+
 app = MainApp(logger, AppConfig)
-app.init_signal_handler()
 
 if AppConfig.daemon:
-    thread = threading.Thread(target=lambda: app.mainloop(), args=(), daemon=True)
-    thread.start()
-    logger.debug('started...')
+    app.daemonize(True)
 else:
-    app.mainloop()
+    app.daemonize(False)
+
