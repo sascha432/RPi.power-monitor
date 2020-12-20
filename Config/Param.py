@@ -44,48 +44,42 @@ class Param(object):
                 self._types = Type(types)
         self._default = default
         self._converter = converter
-        self._raw_value = None
-
-    def __str__(self):
-        return 'name=%s default=%s value=%s types=%s' % (self.name, self._default, self.get_value('<DEFAULT>'), self._types)
+        self._is_default = True
+        self._value = None
+        self._raw_value = self._value
 
     @property
     def default(self):
         return self._default
 
-    def set_value(self, value):
+    @default.setter
+    def set_default(self, value):
+        self._default = value
+
+    @property
+    def value(self):
+        if self.is_default:
+            raise ValueError('value not set: %s' % self.name)
+        return self._value
+
+    @value.setter
+    def value(self, value):
+        self._is_default = False
+        self._raw_value = value
         self._value = self.prepare_value(value)
 
-    def prepare_value(self, value):
-        if not type(value)==self._types:
-            if isinstance(value, int) and float==self._types:
-                value = float(value)
-            else:
-                raise TypeError('type %s not allowed: %s' % (Type.name(value), self._types))
-        if self._converter!=None:
-            if callable(self._converter): # and not isinstance(self._converter, Converter):
-                self._raw_value = value
-                value = self._converter(value, self)
-            else:
-                if isinstance(self._converter, tuple):
-                    self._converter = self._converter[0](self._converter[1])
-                self._raw_value = value
-                value = self._converter.convert(value, self)
-        return value
+    def set_value(self, value):
+        self.value = value
 
-    # default
-    #   DEFAULT.ALLOW         return default value if value is not set
-    #   DEFAULT.EXCEPTION     raise exception if value is not set
-    #   any                   return default
-    def get_value(self, default=DEFAULT.ALLOW):
-        if not hasattr(self, '_value'):
-            if isinstance(default, DEFAULT):
-                if default==True:
-                    return self._default
-                if default==False:
-                    raise ValueError('value not set: %s' % self._name)
-            return default
-        return self._value
+    @property
+    def raw_value(self):
+        if self.is_default:
+            return self.default
+        return self._raw_value
+
+    @property
+    def is_default(self):
+        return self._is_default
 
     @property
     def name(self):
@@ -99,34 +93,68 @@ class Param(object):
     def types(self):
         return self._types
 
+    def __str__(self):
+        if self.is_default:
+            value = 'value=<DEFAULT>'
+        else:
+            if self.value!=self.raw_value:
+                value = 'value=%s raw_value=%s' % (self.value, self.raw_value)
+            else:
+                value = 'value=%s' % self.value
+
+        default = self.prepare_value(self.default, True)
+        if default!=self.default:
+            default = 'default=%s raw_default=%s' % (default, self.default)
+        else:
+            default = 'default=%s' % default
+
+        return 'name=%s %s %s types=%s' % (self.name, value, default, self.types)
+
+    def prepare_value(self, value, any_type=False):
+        if any_type==False and not type(value)==self._types:
+            if not isinstance(value, int) or float!=self.types:
+                raise TypeError('type %s not allowed: %s: %s' % (Type.name(value), self.types, self.name))
+            # convert int to float
+            value = float(value)
+
+        if self._converter==None:
+            return value
+
+        # lazy object creation
+        if isinstance(self._converter, tuple):
+            if not isinstance(self._converter[1], tuple):
+                raise TypeError('converter arguments not tuple: %s: %s' % (Type.name(self._converter[1]), Type.name(self._converter[0])))
+            # create converter object
+            self._converter = self._converter[0](*self._converter[1])
+
+        return self._converter.convert(value, self)
+
     def is_type_allowed(self, value):
-        if Param.ReadOnly==self._types:
+        if Param.ReadOnly==self.types:
             return False
-        if isinstance(value, int) and float==self._types:
+        if isinstance(value, int) and float==self.types:
             return True
-        return type(value)==self._types
+        return type(value)==self.types
 
     def validate_type(self, value):
-        if Param.ReadOnly==self._types:
+        if Param.ReadOnly==self.types:
             return False
-        if value==self._types:
-            raise TypeError('allowed types: %s' % self._types)
+        if value==self.types:
+            raise TypeError('allowed types: %s' % self.types)
 
     # def convert_value(self, value, converter):
     #     if isinstance(self._converter, Converter):
-    #         self._raw_value = value
     #         return self._converter.convert(value, self)
     #     self.validate_type(value)
     #     if callable(converter):
-    #         self._raw_value = value
     #         return converter(value)
     #     return value
 
     def finalize(self, path):
-        if callable(self._default):
-            self._default = self._default(path)
-            if self._types==None:
-                self._types = Type(type(self._default))
+        if callable(self.default):
+            self._default = self.default(path)
+            if self.types==None:
+                self._types = Type(type(self.default))
 
     #
     # create Param object

@@ -3,8 +3,10 @@
 
 from . import *
 import itertools
+import sys
 import types
 import re
+from enum import Enum
 
 class Converter(object):
 
@@ -16,11 +18,17 @@ class Converter(object):
     # static method to create Converter() from attr
     # argument 1: list, tuple, range, iterable, filter or generator
     def __call__(obj, *args):
-        if isinstance(args[0], type):
-            return obj.create_instance(args[1])
-        return obj.create_instance(args[0])
+        print("CONVERTER.callable")
+        if callable(args[0]):
+            sys.exit(0)
+            return args[0](*args[1:])
+        return obj.create_instance(*args)
 
-    def create_instance(value):
+    def create_instance(*args):
+        # if isinstance(args[0])
+        print(len(args), *args)
+        print("CONVERTER.create_instance")
+        sys.exit(0)
         if value==None:
             return None
         try:
@@ -37,10 +45,10 @@ class Converter(object):
 class MarginConverter(Converter):
 
     def top_value(value):
-        return Param(value, (int, float), (MarginConverter, (True)))
+        return Param(value, (int, float), (MarginConverter, (True,)))
 
     def bottom_value(value):
-        return Param(value, (int, float), (MarginConverter, (False)))
+        return Param(value, (int, float), (MarginConverter, (False,)))
 
     #
     # Converts percentage value in multiplier for adding a margin
@@ -66,7 +74,7 @@ class MarginConverter(Converter):
 class TimeConverter(Converter):
 
     def value(value, default_unit='s'):
-        return Param(value, (int, float, str), (TimeConverter, (default_unit)))
+        return Param(value, (int, float, str), (TimeConverter, (default_unit,)))
 
     def __init__(self, default_unit='s'):
         self._unit = default_unit
@@ -107,8 +115,8 @@ class TimeConverter(Converter):
 
 class ListConverter(Converter):
 
-    def value(value, items):
-        return Param(value, (object,), (ListConverter, (items)))
+    def value(value, items, types=()):
+        return Param(value, types, (ListConverter, (items,)))
 
     def __init__(self, items):
         self._items = items
@@ -127,7 +135,7 @@ class ListConverter(Converter):
 class IteratorConverter(ListConverter):
 
     def value(value, iterator):
-        return Param(value, (object,), (IteratorConverter, (iterator)))
+        return Param(value, (object,), (IteratorConverter, (iterator,)))
 
     def __init__(self, iterator):
         self._iterator = iterator
@@ -142,7 +150,7 @@ class IteratorConverter(ListConverter):
 class GeneratorConverter(IteratorConverter):
 
     def value(value, generator):
-        return Param(value, (object,), (GeneratorConverter, (generator)))
+        return Param(value, (object,), (GeneratorConverter, (generator,)))
 
     def __init__(self, generator):
         IteratorConverter.__init__(iter(generator))
@@ -151,7 +159,7 @@ class GeneratorConverter(IteratorConverter):
 class RangeConverter(Converter):
 
     def value(value, range_obj, types=(object,)):
-        return Param(value, types, (RangeConverter, (range_obj)))
+        return Param(value, types, (RangeConverter, (range_obj,)))
 
     def __init__(self, range_obj):
         self._range = range_obj
@@ -164,3 +172,33 @@ class RangeConverter(Converter):
             step = abs(step)!=1 and (' step %d' % -step) or ''
             raise ValueError('invalid value: %s: expected: %d to %d%s' % (value, _min, _max, step))
         return value
+
+class EnumConverter(Converter):
+
+    def EnumFromStr(cls, value, ignore_case=True):
+        if isinstance(value, str):
+            ts = value
+            ts = ignore_case and ts.lower() or ts
+            for i in cls:
+                s = i.__str__()
+                if ignore_case:
+                    s = s.lower()
+                if s==ts:
+                    return i
+                if s.split('.')[-1]==ts:
+                    return i
+        return cls(value)
+
+    def value(value, cls, ignore_case=True):
+        return Param(value, (int,str,float,Enum,cls), (EnumConverter, (cls, ignore_case)))
+
+    def __init__(self, cls, ignore_case=True):
+        self._ignore_case = ignore_case
+        self._cls = cls
+
+    def convert(self, value, param):
+        try:
+            return EnumConverter.EnumFromStr(self._cls, value)
+        except Exception as e:
+            raise e
+

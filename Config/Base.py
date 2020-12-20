@@ -108,6 +108,9 @@ class Root(Base):
     def _object(self):
         return self._objects[self._root_name]
 
+    def _get_children(self):
+        return [self._objects[self._root_name]]
+
     def __setitem__(self, key, obj):
         self._objects[str(key)] = obj
 

@@ -101,6 +101,35 @@ class Path(object):
     def __len__(self):
         return len(self._parts)
 
+    def __eq__(self, val):
+        if not isinstance(val, Path) and val==None:
+            return True
+        return str(val)==self.__str__()
+
+    def startswith(self, val):
+        x = self._startswith(val)
+        # print()
+        return x
+
+    def _startswith(self, val):
+        if not isinstance(val, Path) and val==None:
+            return True
+        try:
+            if isinstance(val, str):
+                val = Path(val)
+            parts = val.parts
+            if len(parts)<len(self):
+                return False
+            index = 0
+            for i in self.parts:
+                if i!=parts[index]:
+                    return False
+                index += 1
+            return True
+        except Exception as e:
+            print(e)
+        return False
+
     @property
     def parts(self):
         return list(self._parts)

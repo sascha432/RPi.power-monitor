@@ -94,16 +94,15 @@ class Merger(object):
 
     def __init__(self, root):
         self._root = root
+        self._init = False
 
-    # if set_defaults is False, only the structure will be created
-    def _set_default_values(self, set_defaults):
+    def _set_default_values(self):
         for path, obj in self._root._objects.items():
             if not path.endswith(']'):
                 path = Path(path)
                 setattr(obj._parent, path.name, obj)
-            if set_defaults:
-                for name, param in obj._param_items():
-                    setattr(obj, param.name, param.default)
+            for name, param in obj._param_items():
+                setattr(obj, param.name, param.prepare_value(param.default, True))
 
     def _merge_config(self, config, path):
         for key, val in config.items():
@@ -118,17 +117,20 @@ class Merger(object):
                 path_str = str(path)
                 if not path_str in self._root:
                     raise KeyError('parameter does not exist. path=%s name=%s' % (path_str, key))
-                # if path_str in self._root:
-                #     param = self._root[path_str]._get_param(key)
-                #     param.set_value(val)
-                setattr(self._root[path_str], key, val)
+                param = self._root[path_str]._get_param(key)
+                param.set_value(val)
+                setattr(self._root[path_str], key, param.value)
 
+    def set_defaults(self):
+        self._set_default_values()
 
-    # create the config tree inside root merging default values with given configuration
+    # merging config with existing configuration
+    # can be called without config to set defaults
     #
-    # values are not validated, but the attributes must exist
-    # ObjectWriter can validate any object and fill it with default values
-    # if config contains all values, set_defaults can be set to False
-    def merge(self, config, set_defaults=True):
-        self._set_default_values(set_defaults)
-        self._merge_config(config, Path())
+    # values are validated and converted
+    def merge(self, config=None):
+        if self._init==False:
+            self._init = True
+            self._set_default_values()
+        if config!=None:
+            self._merge_config(config, Path())
