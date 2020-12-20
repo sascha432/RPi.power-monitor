@@ -5,8 +5,9 @@
 # per channel calibration
 class Calibration(object):
 
-    RAW_VSHUNT_TO_MILLIVOLT = 0.005       # Shunt Voltage to mV
-    RAW_VBUS_TO_VOLT = 0.001        # Bus Voltage to V
+    RAW_VSHUNT_TO_MILLIVOLT = 0.005         # Shunt Voltage to mV
+    RAW_VSHUNT_TO_VOLT = 0.000005
+    RAW_VBUS_TO_VOLT = 0.001                # Bus Voltage to V
 
     def __init__(self, shunt=0.1, raw_offset=0, vshunt_mul=1.0, vbus_mul=1.0, disabled=False):
         if not disabled:

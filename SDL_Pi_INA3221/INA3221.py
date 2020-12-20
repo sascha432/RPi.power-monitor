@@ -8,7 +8,20 @@
 
 from .Calibration import Calibration
 from datetime import datetime
-import smbus
+from enum import Enum
+import sys
+try:
+    import smbus
+except:
+    # dummy class
+    class smbus:
+        class SMBus:
+            def __init__(self, twi):
+                pass
+            def write_word_data(self, addr, register, switchdata):
+                pass
+            def read_word_data(self, addr, register):
+                return 0
 
 # constants
 
@@ -54,17 +67,19 @@ class INA3211_CONFIG:
     # 110 = 512
     # 111 = 1024
 
-    AVG = 0
-    AVG_MASK = ~(0b111 << 9)
+    class AVERAGING_MODE(Enum):
+        x1 = 0b000 << 9
+        x4 = 0b001 << 9
+        x16 = 0b010 << 9
+        x64 = 0b011 << 9
+        x128 = 0b100 << 9
+        x256 = 0b101 << 9
+        x512 = 0b110 << 9
+        x1024 = 0b111 << 9
+        DEFAULT = 0b101 << 9
 
-    AVG_x1 = 0b000 << 9
-    AVG_x4 = 0b001 << 9
-    AVG_x16 = 0b010 << 9
-    AVG_x64 = 0b011 << 9
-    AVG_x128 = 0b100 << 9
-    AVG_x256 = 0b101 << 9
-    AVG_x512 = 0b110 << 9
-    AVG_x1024 = 0b111 << 9
+    AVG = AVERAGING_MODE.x16._value_
+    AVG_MASK = ~(0b111 << 9)
 
     # Bit 8-6
 
@@ -79,12 +94,34 @@ class INA3211_CONFIG:
     # 110 = 4.156 ms
     # 111 = 8.244 ms
 
-    VBUS_CT = 0b011 << 6
+    class VBUS_CONVERSION_TIME(Enum):
+        time_140_us = 0b000 << 6
+        time_204_us = 0b001 << 6
+        time_332_us = 0b010 << 6
+        time_588_us = 0b011 << 6
+        time_1100_us = 0b100 << 6
+        time_2116_us = 0b101 << 6
+        time_4156_us = 0b110 << 6
+        time_8244_us = 0b111 << 6
+        DEFAULT = 0b100 << 6
+
+    VBUS_CT = VBUS_CONVERSION_TIME.time_588_us._value_
     VBUS_CT_MASK = ~(0b111 << 6)
 
     # Bit 5-3
 
-    VSH_CT = 0b100 << 3
+    class VSHUNT_CONVERSION_TIME(Enum):
+        time_140_us = 0b000 << 3
+        time_204_us = 0b001 << 3
+        time_332_us = 0b010 << 3
+        time_588_us = 0b011 << 3
+        time_1100_us = 0b100 << 3
+        time_2116_us = 0b101 << 3
+        time_4156_us = 0b110 << 3
+        time_8244_us = 0b111 << 3
+        DEFAULT = 0b100 << 3
+
+    VSH_CT = VSHUNT_CONVERSION_TIME.DEFAULT._value_
     VSH_CT_MASK = ~(0b111 << 3)
 
     # Bit 2-0
@@ -127,13 +164,15 @@ class INA3221():
     ###########################
     # INA3221 Code
     ###########################
-    def __init__(self, twi=1, addr=INA3221_ADDRESS, channels=INA3211_CONFIG.ENABLE_ALL_CHANNELS, avg=INA3211_CONFIG.AVG_x16, shunt=SHUNT_RESISTOR_VALUE):
+    def __init__(self, twi=1, addr=INA3221_ADDRESS, channels=INA3211_CONFIG.ENABLE_ALL_CHANNELS, avg=INA3211_CONFIG.AVERAGING_MODE.DEFAULT, vbus_ct=INA3211_CONFIG.VBUS_CONVERSION_TIME, vshunt_ct=INA3211_CONFIG.VSHUNT_CONVERSION_TIME.DEFAULT, shunt=SHUNT_RESISTOR_VALUE):
         self._bus = smbus.SMBus(twi)
         self._addr = addr
         self._shunt = shunt
-        self._config = channels | INA3211_CONFIG.VBUS_CT | INA3211_CONFIG.VSH_CT | INA3211_CONFIG.MODE | avg
+        self._config = channels | vbus_ct._value_ | vshunt_ct._value_ | INA3211_CONFIG.MODE | avg._value_
         self._calibration = {}
         self._write_register_little_endian(INA3221_REG_CONFIG, self._config)
+
+        self._channel_read_time = (int(str(avg).split('.')[-1][1:]) * (int(str(vbus_ct).split('.')[-1].split('_')[1]) + int(str(vshunt_ct).split('.')[-1].split('_')[1]))) / 1000000.0
 
     def _write(self, register, data):
         #print "addr =0x%x register = 0x%x data = 0x%x " % (self._addr, register, data)
@@ -202,9 +241,9 @@ class INA3221():
         if channel==0:
             bit = INA3211Config.ENABLE_CHANNEL1
         elif channel==1:
-            bit = INA3211Config.ENABLE_CHANNEL1
+            bit = INA3211Config.ENABLE_CHANNEL2
         elif channel==2:
-            bit = INA3211Config.ENABLE_CHANNEL1
+            bit = INA3211Config.ENABLE_CHANNEL3
         if enable:
             self._config |= bit
         else:
@@ -218,6 +257,9 @@ class INA3221():
 	# Gets the shunt voltage in mV (so +-168.3mV)
     def getShuntVoltage_mV(self, channel):
         return self._getShuntVoltage_raw(channel) * Calibration.RAW_VSHUNT_TO_MILLIVOLT
+
+    def getShuntVoltage_V(self, channel):
+        return self._getShuntVoltage_raw(channel) * Calibration.RAW_VSHUNT_TO_VOLT
 
     # Gets the current value in mA, taking into account the config settings and current LSB
     def getCurrent_mA(self, channel):
