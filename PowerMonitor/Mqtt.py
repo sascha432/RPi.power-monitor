@@ -203,7 +203,7 @@ class Mqtt(Idle.Idle):
                         sum_E += tmp2[n]['ep']
 
                         topic = AppConfig.mqtt.get_channel_topic(n + 1)
-                        self.debug(__name__, 'MQTT publish %s: %s', topic, payload)
+                        self.info(__name__, 'MQTT publish %s: %s', topic, payload)
                         self.client.publish(topic, payload=payload, qos=AppConfig.mqtt.qos, retain=True)
 
                         n += 1

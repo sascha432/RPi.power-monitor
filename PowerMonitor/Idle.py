@@ -37,7 +37,11 @@ class Idle(BaseApp.BaseApp):
 
     def start(self):
         self.debug(__name__, 'start')
-        if not self.has_idle_support:
+        flag = self.has_idle_support
+        if flag and 'win' in sys.platform:
+            flag = False
+            self.error(__name__, 'idle_check_cmd not supported on windows')
+        if not flag:
             self._state = None
             self._cmd = None
             return

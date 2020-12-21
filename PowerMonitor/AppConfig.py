@@ -241,6 +241,12 @@ class Channels(list):
     def __init__(self):
         list.__init__([])
 
+    def items(self):
+        tmp = []
+        for item in list(self):
+            tmp.append((len(tmp), item))
+        return tmp
+
 class ChannelCalibration(object):
     def __init__(self, config):
         self._config = config

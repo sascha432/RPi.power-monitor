@@ -20,6 +20,7 @@ class GuiConfig(object):
         object.__setattr__(self, '_parent', parent)
         object.__setattr__(self, '_allowed', allowed)
         object.__setattr__(self, '_exception', exception)
+        object.__setattr__(self, '_disabled', True)
         for key, val in data.items():
             object.__setattr__(self, key, val)
         if allowed:
@@ -27,8 +28,16 @@ class GuiConfig(object):
                 if not hasattr(self, key):
                     object.__setattr__(self, key, data[key])
 
+    @property
+    def disabled(self):
+        return self._disabled==False
+
+    @disabled.setter
+    def disabled(self, value):
+        object.__setattr__(self, '_disabled', value)
+
     def __setattr__(self, key, val):
-        if not key.startswith('_'):
+        if self._disabled!=False and not key.startswith('_'):
             self._parent.write_gui_config()
             if self._allowed==None:
                 return
@@ -181,6 +190,17 @@ class MainApp(MainAppCli):
 
         self.start()
 
+    def mainloop(self):
+        self.debug(__name__, 'mainloop gui=%s' % (self._gui and 'enabled' or 'disabled'))
+        if self._gui:
+            self._gui.mainloop()
+        else:
+            MainAppCli.loop(self, False)
+
+    def quit(self):
+        if self._gui:
+            self._gui.quit()
+
     def _execute_base_methods(self_obj, func_name, *args, **kwargs):
         self_obj.debug(__name__, 'calling __bases__.%s', func_name)
         Tools.execute_method(self_obj, self_obj._bases, func_name, *args, **kwargs)
@@ -211,6 +231,7 @@ class MainApp(MainAppCli):
         except Exception as e:
             self.info(__name__, 'invalid configuration: %s: %s', file, e)
             self._gui_config = GuiConfig(self, defaults, defaults.keys())
+            self._gui_config.disabled = False
 
 
     def _write_gui_config(self):
@@ -229,24 +250,27 @@ class MainApp(MainAppCli):
         self._scheduler.enter(10.0, SCHEDULER_PRIO.WRITE_GUI_CONFIG, self._write_gui_config)
 
     def import_tkinter(self):
-        global Gui, tk, ttk, font, tkinter, animation, Figure, FigureCanvasTkAgg, NavigationToolbar2Tk
-        # import matplotlib
-        # matplotlib.use('tkagg')
-        from .Gui import Gui
+        from . import Gui
         import tkinter
-        from tkinter import font
-        import tkinter as tk
-        from tkinter import ttk
-        import tkinter.messagebox
-        import matplotlib.animation as animation
+        from tkinter import (font, ttk)
         from matplotlib.figure import Figure
-        from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
-        return (Gui, tk, ttk, font, tkinter, animation, Figure, FigureCanvasTkAgg, NavigationToolbar2Tk)
+        import matplotlib
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        return {
+            'Gui': Gui.Gui,
+            'tk': tkinter,
+            'ttk': ttk,
+            'font': font,
+            'tkinter': tkinter,
+            'animation': matplotlib.animation,
+            'Figure': Figure,
+            'FigureCanvasTkAgg': FigureCanvasTkAgg
+        }
 
     def __init_gui__(self):
 
         self.debug(__name__, 'starting with GUI')
-        self.import_tkinter()
+        globals().update(self.import_tkinter())
 
         self.read_gui_config()
         self._gui = Gui(self)
@@ -302,7 +326,6 @@ class MainApp(MainAppCli):
         finally:
             self._plot_lock.release()
 
-
     def ani_schedule_start(self, time=0.01):
         self._scheduler.enter(time, SCHEDULER_PRIO.ANIMATION, self.ani_start)
 
@@ -317,14 +340,16 @@ class MainApp(MainAppCli):
             self.error(__name__, 'ani_update could not acquire lock')
             return
         try:
+            self._canvas_update_required = True
             if self.ani:
-                # probably waiting for the scheduler to start a new animation
+                self.error(__name__, 'ani_update without animation object')
+                # probably waiting for the scheduler to start a new animation, just redraw
                 return
             self.ani.event_source.stop()
-            self.canvas.draw()
-            self.canvas.flush_events()
-            self.ani = None
-            self.ani_schedule_start()
+            self.ani.event_source.interval = self.ani_interval
+            # self.ani = None
+            # self.ani_schedule_start()
+            self.ani.event_source.start()
         finally:
             self._plot_lock.release()
 
@@ -350,17 +375,6 @@ class MainApp(MainAppCli):
 
         return "break"
 
-    def mainloop(self):
-        self.debug(__name__, 'mainloop gui=%s' % (self._gui and 'enabled' or 'disabled'))
-        if self._gui:
-            self._gui.mainloop()
-        else:
-            MainAppCli.loop(self, False)
-
-    def quit(self):
-        if self._gui:
-            self._gui.quit()
-
     def init_scheme(self):
 
         tmp = AppConfig.gui.geometry.split('x')
@@ -374,7 +388,7 @@ class MainApp(MainAppCli):
             self.PLOT_TEXT = self.TEXT_COLOR
             self.PLOT_GRID = 'gray'
             self.PLOT_BG = "#303030"
-            self.FG_CHANNEL0 = 'red'
+            self.FG_CHANNEL0 = 'red' #aggregated power
             self.FG_CHANNEL1 = 'lime'
             self.FG_CHANNEL2 = 'deepskyblue'
             self.FG_CHANNEL3 = '#b4b0d1' # 'lavender'

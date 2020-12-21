@@ -26,15 +26,26 @@ class Sensor(Mqtt.Mqtt):
         self._energy_backp_file_num = 0
         self._read_sensor_thread_state = {'quit': False}
         self._read_count = 0
+        self._errors = 0
 
+        if not self._init_ina3221_sensor():
+            self._errors += 1
+
+    def _init_ina3221_sensor(self, init_calib=False):
         if AppConfig.ina3221.auto_mode_sensor_values_per_second!=None and AppConfig.ina3221.auto_mode_sensor_values_per_second!=0:
             avg, vbus, vshunt, interval, olist = SDL_Pi_INA3221.INA3221.get_interval_params(1 / AppConfig.ina3221.auto_mode_sensor_values_per_second)
         else:
             avg = AppConfig.ina3221.averaging_mode
             vbus = AppConfig.ina3221.vbus_conversion_time
             vshunt = AppConfig.ina3221.vshunt_conversion_time
-
-        self.ina3221 = SDL_Pi_INA3221.INA3221(addr=AppConfig.ina3221.i2c_address, avg=avg, vbus_ct=vbus, vshunt_ct=vbus, shunt=1)
+        try:
+            self.ina3221 = SDL_Pi_INA3221.INA3221(addr=AppConfig.ina3221.i2c_address, avg=avg, vbus_ct=vbus, vshunt_ct=vbus, shunt=1)
+            if init_calib:
+                self.ina3221._calibration = ChannelCalibration(AppConfig)
+        except Exception as e:
+            self.error(__name__, 'exception while initializing INA3221 sensor: %s' % e)
+            return False
+        return True
 
     def start(self):
         self.debug(__name__, 'start')
@@ -72,77 +83,92 @@ class Sensor(Mqtt.Mqtt):
         self.info(__name__, 'sensor read interval %.2fms' % (self.ina3221._channel_read_time * 1000))
         try:
             while not self._read_sensor_thread_state['quit']:
-                t = time.monotonic()
-                self.data[0].append(t)
-                for channel in AppConfig.channels:
-                    ch = int(channel)
+                if self._errors==0:
+                    t = time.monotonic()
+                    self.data[0].append(t)
+                    for channel in AppConfig.channels:
+                        ch = int(channel)
+                        if channel in self.channels:
+                            busvoltage, shuntvoltage, current, loadvoltage, power = (0, 0, 0, 0, 0)
+                        else:
+                            try:
+                                busvoltage = self.ina3221.getBusVoltage_V(ch)
+                                shuntvoltage = self.ina3221.getShuntVoltage_V(ch)
+                                current = self.ina3221.getCurrent_mA(ch)
+                                loadvoltage = busvoltage - shuntvoltage
+                                current = current / 1000.0
+                                power = (current * busvoltage)
+                            except Exception as e:
+                                self.error(__name__, 'exception while reading INA3221 sensor: %s', str(e))
+                                self._errors += 1
+                                busvoltage, shuntvoltage, current, loadvoltage, power = (float("nan"), float("nan"), float("nan"), 0, 0)
 
-                    if channel in self.channels:
-                        busvoltage = 0
-                        shuntvoltage = 0
-                        current = 0
-                        loadvoltage = 0
-                        power = 0
-                    else:
-                        busvoltage = self.ina3221.getBusVoltage_V(ch)
-                        shuntvoltage = self.ina3221.getShuntVoltage_V(ch)
-                        current = self.ina3221.getCurrent_mA(ch)
-                        loadvoltage = busvoltage - shuntvoltage
-                        current = current / 1000.0
-                        power = (current * busvoltage)
+                        self.add_stats('sensor', 1)
 
-                    self.add_stats('sensor', 1)
+                        self._data_lock.acquire()
+                        try:
+                            self.averages[0][ch] += 1
+                            self.averages[1][ch] += loadvoltage
+                            self.averages[2][ch] += current
+                            self.averages[3][ch] += power
 
-                    self._data_lock.acquire()
-                    try:
-                        self.averages[0][ch] += 1
-                        self.averages[1][ch] += loadvoltage
-                        self.averages[2][ch] += current
-                        self.averages[3][ch] += power
+                            self.add_stats_minmax('ch%u_U' % ch, loadvoltage)
+                            self.add_stats_minmax('ch%u_I' % ch, current)
+                            self.add_stats_minmax('ch%u_P' % ch, power)
 
-                        self.add_stats_minmax('ch%u_U' % ch, loadvoltage)
-                        self.add_stats_minmax('ch%u_I' % ch, current)
-                        self.add_stats_minmax('ch%u_P' % ch, power)
-
-                        if True:
-                            if self.energy[ch]['t']==0:
-                                self.energy[ch]['t'] = t
-                            else:
-                                diff = t - self.energy[ch]['t']
-                                # do not add if there is a gap
-                                if diff<1.0:
-                                    self.energy[ch]['ei'] += (diff * current / 3600)
-                                    self.energy[ch]['ep'] += (diff * power / 3600)
+                            if True:
+                                if self.energy[ch]['t']==0:
+                                    self.energy[ch]['t'] = t
                                 else:
-                                    if diff>10.0:
-                                        self.error(__name__, 'delay reading sensor data: channel %u: %.2fsec', ch, diff)
-                                self.energy[ch]['t'] = t
+                                    diff = t - self.energy[ch]['t']
+                                    # do not add if there is a gap
+                                    if diff<1.0:
+                                        self.energy[ch]['ei'] += (diff * current / 3600)
+                                        self.energy[ch]['ep'] += (diff * power / 3600)
+                                    else:
+                                        if diff>10.0:
+                                            self.error(__name__, 'delay reading sensor data: channel %u: %.2fsec', ch, diff)
+                                    self.energy[ch]['t'] = t
 
-                            # self.data[ch].append((current, loadvoltage, power))
-                            self.data[1][ch][0].append(loadvoltage)
-                            self.data[1][ch][1].append(current)
-                            self.data[1][ch][2].append(power)
+                                # self.data[ch].append((current, loadvoltage, power))
+                                self.data[1][ch][0].append(loadvoltage)
+                                self.data[1][ch][1].append(current)
+                                self.data[1][ch][2].append(power)
 
-                            # self.data[ch].append({'t': t, 'I': current, 'U': loadvoltage, 'P': power })
+                                # self.data[ch].append({'t': t, 'I': current, 'U': loadvoltage, 'P': power })
 
-                            if t>self.energy['stored'] + AppConfig.store_energy_interval:
-                                self.energy['stored'] = t;
-                                self.store_energy()
+                                if t>self.energy['stored'] + AppConfig.store_energy_interval:
+                                    self.energy['stored'] = t;
+                                    self.store_energy()
 
-                    finally:
-                        self._data_lock.release()
+                        finally:
+                            self._data_lock.release()
 
-                # self.debug(__name__, 'sensor items %u', len(self.data[0]))
+                    # self.debug(__name__, 'sensor items %u', len(self.data[0]))
 
-                diff = time.monotonic() - t
-                diff = diff>0 and (self.ina3221._channel_read_time - diff) or 0
-                self._read_count += 1
-                self._read_sensor_thread_listener.sleep(diff, self.read_sensor_thread_handler)
+                        diff = time.monotonic() - t
+                        diff = diff>0 and (self.ina3221._channel_read_time - diff) or 0
+                        self._read_count += 1
+                        self._read_sensor_thread_listener.sleep(diff, self.read_sensor_thread_handler)
 
-                if self._gui and self.ani==None:
-                    self.ani = False
-                    self.debug(__name__, 'start animation from sensor')
-                    self.ani_schedule_start(0.1)
+                    if self._gui and self.ani==None:
+                        self.ani = False
+                        self.debug(__name__, 'start animation from sensor')
+                        self.ani_schedule_start(0.1)
+
+                # if any error occurs, let it finish reading all channels and try to reinitilize here
+                if self._errors>0:
+                    self.energy[ch]['t'] = 0
+                    while True:
+                        self.info(__name__, 'waiting 30 seconds before trying to reintialize the sensor: errors=%u', self._errors)
+                        self._read_sensor_thread_listener.sleep(30.0, self.read_sensor_thread_handler)
+                        if self._read_sensor_thread_state['quit']:
+                            break
+                        if self._init_ina3221_sensor(True):
+                            self.info(__name__, 'resetting sensor error count')
+                            self._errors = 0
+                            break
+                        self._errors += 1
 
         except Exception as e:
             self.error(_name_, str(e))

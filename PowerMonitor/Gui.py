@@ -18,9 +18,7 @@ class Gui(tk.Tk):
 
         tk.Tk.__init__(self)
         tk.Tk.wm_title(self, AppConfig.gui.title)
-
-        if AppConfig._debug:
-            tk.Tk.report_callback_exception = self.report_callback_exception
+        tk.Tk.report_callback_exception = self.report_callback_exception
 
     @property
     def fullscreen_state(self):
@@ -31,11 +29,12 @@ class Gui(tk.Tk):
         self._parent.fullscreen_state = state
 
     def report_callback_exception(self, exc, val, tb):
-        self._parent.debug(__name__, 'tkinter exception: %s', exc)
-        if 'shape mismatch' in str(exc):
+        # traceback.format_exception(exc, val, tb)
+        self._parent.error(__name__, '%s: %s' % (exc.__class__.__name__, val))
+        if str(val).startswith('shape mismatch:'):
             self._parent.reset_values()
-        else:
-            AppConfig._debug_exception(traceback.format_exception(exc, val, tb))
+        elif AppConfig._debug:
+            AppConfig._debug_exception(val)
 
     def mainloop(self):
         tk.Tk.mainloop(self)
