@@ -34,10 +34,16 @@ class BaseApp(object):
 
         self._threads = []
         self._thread_idents = []
+        # thread manager
         self._event = EventManager.Event()
 
-        self.lock = threading.Lock()
+        # data and plot locks
+        self._data_lock = threading.Lock()
+        self._plot_lock = threading.Lock()
+
+        # lock for creating threads
         self.thread_lock = threading.Lock()
+
         self.start_time = time.monotonic()
         self.terminate = Terminate(self._event, threading.Event())
         AppConfig._terminate = self.terminate
@@ -74,7 +80,13 @@ class BaseApp(object):
                 else:
                     count -= 1
         self.destroy()
+
+        if AppConfig.daemon:
+            file = AppConfig.get_filename(AppConfig.pid_file)
+            os.unlink(file)
+
         self.quit()
+        self.debug(__name__, 'exit(%s)', signal)
         sys.exit(signal)
 
     def init_signal_handler(self):
@@ -124,7 +136,7 @@ class BaseApp(object):
         finally:
             self.thread_lock.release()
 
-    def get_pids(self):
+    def get_thread_idents(self):
         pids = []
         for pid in self._thread_idents:
             pids.append(pid[1])
@@ -136,7 +148,7 @@ class BaseApp(object):
         try:
             pid = threading.current_thread().ident
             self._thread_idents.append((name, pid))
-            self.debug(__name__, 'add thread %s ident %u (%s)' % (name, pid, self.get_pids()))
+            self.debug(__name__, 'adding thread %s ident %u (%u)' % (name, pid, len(self.get_thread_idents())))
         finally:
             self.thread_lock.release()
 
@@ -147,7 +159,7 @@ class BaseApp(object):
             index = 0
             for thread in self._thread_idents:
                 if thread[0]==name:
-                    self.debug(__name__, 'remove thread %s ident %u (%s)' % (thread[0], thread[1], self.get_pids()))
+                    self.debug(__name__, 'remove thread %s ident %u (%u)' % (thread[0], thread[1], len(self.get_thread_idents())))
                     del self._thread_idents[index]
                     break
                 index += 1
@@ -165,38 +177,51 @@ class BaseApp(object):
         try:
             while not self.terminate.is_set():
                 self._scheduler.run(False)
-
-                # self.plot_values(2, True)
                 self.terminate.wait(0.25)
-
-            self.thread_unregister(__name__)
         except Exception as e:
             AppConfig._debug_exception(e)
 
+        self.thread_unregister(__name__)
+
     def fork(self):
-        pid = os.fork()
-        if pid > 0:
-            sys.exit(0)
+        try:
+            pid = os.fork()
+            if pid > 0:
+                sys.exit(0)
+        except Exception as e:
+            self.error('failed to fork: %s', e)
 
         os.chdir("/")
         os.setsid()
         os.umask(0)
 
-        pid = os.fork()
-        if pid > 0:
-            sys.exit(0)
+        try:
+            pid = os.fork()
+            if pid > 0:
+                sys.exit(0)
+
+        except Exception as e:
+            self.error('failed to fork: %s', e)
+
 
     def daemonize(self, daemon):
         self.init_signal_handler()
-        self.thread_daemonize(__name__, self.main_thread, sub='daemon')
-        if self._gui:
-            self._gui.mainloop()
-        else:
-            self.main_thread()
 
         if daemon:
             self.debug(__name__, 'daemonizing...')
             self.fork()
+
+            file = AppConfig.get_filename(AppConfig.pid_file)
+            self.debug(__name__, 'creating PID file %s: %u' % (file, os.getpid()))
+            with open(file, 'w') as f:
+                f.write('%s\n' % os.getpid())
+
+        if self._gui:
+            self.thread_daemonize(__name__, self.main_thread, sub='daemon')
+            # tk is the main thread with GUI
+            self._gui.mainloop()
+        else:
+            self.main_thread()
 
     def _log_enabled(self, type, name):
         if type=='debug':

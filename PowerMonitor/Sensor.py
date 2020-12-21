@@ -27,7 +27,6 @@ class Sensor(Mqtt.Mqtt):
         self._read_sensor_thread_state = {'quit': False}
         self._read_count = 0
 
-
         if AppConfig.ina3221.auto_mode_sensor_values_per_second!=None and AppConfig.ina3221.auto_mode_sensor_values_per_second!=0:
             avg, vbus, vshunt, interval, olist = SDL_Pi_INA3221.INA3221.get_interval_params(1 / AppConfig.ina3221.auto_mode_sensor_values_per_second)
         else:
@@ -94,7 +93,7 @@ class Sensor(Mqtt.Mqtt):
 
                     self.add_stats('sensor', 1)
 
-                    self.lock.acquire()
+                    self._data_lock.acquire()
                     try:
                         self.averages[0][ch] += 1
                         self.averages[1][ch] += loadvoltage
@@ -131,7 +130,7 @@ class Sensor(Mqtt.Mqtt):
                                 self.store_energy()
 
                     finally:
-                        self.lock.release()
+                        self._data_lock.release()
 
                 # self.debug(__name__, 'sensor items %u', len(self.data[0]))
 
@@ -199,17 +198,15 @@ class Sensor(Mqtt.Mqtt):
     def reset_avg(self):
         self.averages = np.zeros((4, 3))
 
-    def aggregate_sensor_values(self, blt):
+    def aggregate_sensor_values(self):
         try:
             tmp = []
-            if blt==False:
-                self.lock.acquire()
+            self._data_lock.acquire()
             try:
                 tmp = self.data
                 self.reset_data()
             finally:
-                if blt==False:
-                    self.lock.release()
+                self._data_lock.release()
 
             n = len(tmp[0])
             if n==0:

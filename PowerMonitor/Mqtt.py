@@ -176,13 +176,13 @@ class Mqtt(Idle.Idle):
             else:
                 sleep_time = AppConfig.mqtt.update_interval
                 tmp = None
-                self.lock.acquire()
+                self._data_lock.acquire()
                 try:
                     averages = [np.divide(self.averages[1], self.averages[0]), np.divide(self.averages[2], self.averages[0]), np.divide(self.averages[3], self.averages[0])]
                     self.reset_avg()
                     tmp2 = copy.deepcopy(self.energy)
                 finally:
-                    self.lock.release()
+                    self._data_lock.release()
 
                 kwh_precision = [(.001, 6), (.01, 5), (.1, 4), (1.0, 3), (100.0, 2), (None, 0)]
 

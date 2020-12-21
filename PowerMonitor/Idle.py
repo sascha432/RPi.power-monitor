@@ -62,7 +62,7 @@ class Idle(BaseApp.BaseApp):
         except Exception as e:
             self.error(__name__, 'failed to execute command: %d: %s: %s' % (p.returncode, shlexy.join(self._cmd), e))
 
-        self.debug(__name__, 'monitor enabled: %s', state)
+        # self.debug(__name__, 'monitor enabled: %s', state)
         return state
 
     def check_idle_thread(self):

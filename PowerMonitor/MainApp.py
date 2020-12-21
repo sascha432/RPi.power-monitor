@@ -76,9 +76,6 @@ class MainAppCli(Plot.Plot):
             {'U': 0, 'e': 0}
         ]
 
-        self.ax = []
-        # self.lines = [ [], [] ] # lines for ax[0], ax[1]
-
         self.reset_values()
         self.reset_avg()
         self.load_energy()
@@ -123,7 +120,9 @@ class MainAppCli(Plot.Plot):
 
     def reset_values(self):
         self.debug(__name__, 'reset values')
-        self.lock.acquire()
+        if not self._data_lock.acquire(True, 5.0):
+            self.error(__name__, 'reset_values could not acquire lock')
+            return
         try:
             self.reset_data()
             self.stats = {}
@@ -138,7 +137,7 @@ class MainAppCli(Plot.Plot):
             self.power_sum = [ 1 ]
             self.values = PlotValuesContainer(self.channels)
         finally:
-            self.lock.release()
+            self._data_lock.release()
 
     def reset_energy(self):
         self.energy = {
@@ -257,12 +256,7 @@ class MainApp(MainAppCli):
         self.init_plot()
 
         self._gui.init_bindings()
-        self._gui.bind('<F6>', self.debugf6)
-
-    def debugf6(self, event=None):
-        # self.plot_values(-1)
-        self.canvas.draw()
-        # self.canvas.flush_events()
+        # self._gui.bind('<F6>', self.debugf6)
 
 
     def window_resize(self):
@@ -279,8 +273,8 @@ class MainApp(MainAppCli):
         # self._fonts.debug_font.configure(size=int(self._fonts.debug_font._org_size * self._geometry_info[2]))
         # self._fonts.label_font.configure(size=int(self._fonts.label_font._org_size * self._geometry_info[2]))
 
-        # for ax in self.ax:
-        #     ax.tick_params(labelsize=self._fonts.plot_font.cget('size'))
+        # for data in self._ax_data:
+        #     data.ax.tick_params(labelsize=self._fonts.plot_font.cget('size'))
         # self.legend()
 
 
@@ -297,46 +291,51 @@ class MainApp(MainAppCli):
     def ani_start(self):
         self.ani_interval = AppConfig.plot.refresh_interval
         self.debug(__name__, 'start animation %u', self.ani_interval)
-        self.lock.acquire()
+        if not self._plot_lock.acquire(True, 5.0):
+            self.error(__name__, 'ani_start could not acquire lock')
+            return
         try:
             self.ani = animation.FuncAnimation(self.fig, self.plot_values, interval=self.ani_interval, blit=True)
             self.canvas.draw_idle()
         except:
             AppConfig._debug_exception(e)
-
         finally:
-            self.lock.release()
+            self._plot_lock.release()
 
 
     def ani_schedule_start(self, time=0.01):
-        self._scheduler.enter(time, 100, self.ani_start)
+        self._scheduler.enter(time, SCHEDULER_PRIO.ANIMATION, self.ani_start)
 
     def ani_get_speed_type(self):
         return self.ani_interval==AppConfig.plot.refresh_interval
 
     def ani_get_speed(self, fast=True):
-        if fast:
-            return AppConfig.plot.refresh_interval
-        return AppConfig.plot.idle_refresh_interval
+        return fast and AppConfig.plot.refresh_interval or AppConfig.plot.idle_refresh_interval
 
     def ani_update(self):
-        self.lock.acquire()
+        if not self._plot_lock.acquire(True, 1.0):
+            self.error(__name__, 'ani_update could not acquire lock')
+            return
         try:
+            if self.ani:
+                # probably waiting for the scheduler to start a new animation
+                return
             self.ani.event_source.stop()
             self.canvas.draw()
             self.canvas.flush_events()
             self.ani = None
             self.ani_schedule_start()
-            # self.ani.event_source.start()
         finally:
-            self.lock.release()
+            self._plot_lock.release()
 
     def ani_toggle_speed(self, event=None):
         self.debug(__name__, 'toggle animation speed %u', self.ani_interval)
         if not self.ani:
             self.error(__name__, 'animation not running')
             return
-        self.lock.acquire()
+        if not self._plot_lock.acquire(True, 1.0):
+            self.error(__name__, 'ani_toggle_speed could not acquire lock')
+            return
         try:
             if self.ani_interval==AppConfig.plot.refresh_interval:
                 self.ani_interval = AppConfig.plot.idle_refresh_interval
@@ -347,7 +346,7 @@ class MainApp(MainAppCli):
             self.ani.event_source.interval = self.ani_interval
             self.ani.event_source.start()
         finally:
-            self.lock.release()
+            self._plot_lock.release()
 
         return "break"
 
@@ -514,6 +513,7 @@ class MainApp(MainAppCli):
 
     def toggle_plot_visibility(self, event=None):
         self._gui_config.plot_visibility = Tools.EnumIncr(self._gui_config.plot_visibility)
+        self.debug(__name__, 'visibility %s', str(self._gui_config.plot_visibility))
         self.set_plot_geometry()
         self.ani_update()
         return 'break'
@@ -533,7 +533,7 @@ class MainApp(MainAppCli):
 
     def toggle_primary_display(self, event=None):
         self._gui_config.plot_primary_display = Tools.EnumIncr(self._gui_config.plot_primary_display)
-        self.set_main_plot()
+        self.reconfigure_axis()
         self.ani_update()
         return 'break'
 

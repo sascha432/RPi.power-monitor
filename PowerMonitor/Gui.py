@@ -78,25 +78,20 @@ class Gui(tk.Tk):
         self.execute_key_binding(binding)
 
     def init_bindings(self):
-
         if AppConfig.gui.fullscreen:
             if not 'win' in sys.platform:
                 # self.attributes('-zoomed', True)
                 self.toggle_fullscreen()
-
         for binding in (dir(AppConfig.gui.key_bindings)):
             if AppConfig.gui.key_bindings._is_key_valid(binding):
                 value = getattr(AppConfig.gui.key_bindings, binding)
                 keys = value.split(',')
                 func = EnumConverter.EnumFromStr(Enums.KEY_BINDINGS, binding)
-
                 for key in keys:
                     try:
                         self.bind(key, Tools.LambdaCaller(self.handle_bind_event, (func,)))
                     except Exception as e:
                         raise ValueError('invalid key binding: %s: %s: %s' % (key, str(func), e))
-
-        # self._parent.canvas.get_tk_widget().bind('<Button-1>', self._parent.button_1)
 
     def toggle_fullscreen(self, event=None):
         if not 'win' in sys.platform:

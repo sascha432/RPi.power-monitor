@@ -28,6 +28,7 @@ class DISPLAY_ENERGY(Enum):
 class SCHEDULER_PRIO(Enum):
     WRITE_GUI_CONFIG = 0
     DEBUG_PING = 1
+    ANIMATION = 2
 
 class KEY_BINDINGS(Enum):
     TOGGLE_FULLSCREEN = 0

@@ -15,6 +15,7 @@ class App(Base):
     config_dir = ('.', (Param.ReadOnly,))
     config_file = ('{config_dir}/config.json', (Param.ReadOnly,))
     energy_storage_file = '{config_dir}/energy.json'
+    pid_file = '{config_dir}/power_monitor.pid'
 
     store_energy_interval = TimeConverter.value(60)
 
