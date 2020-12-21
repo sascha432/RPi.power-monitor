@@ -3,10 +3,6 @@
 #
 
 from . import *
-# from . import BaseApp
-# from . import Plot
-# from . import Sensor
-# from . import Mqtt
 from Config.Type import Type
 from .AppConfig import Channel
 from .Enums import COLOR_SCHEME
@@ -60,10 +56,6 @@ class MainAppCli(Plot.Plot):
 
     def start(self):
         self.debug(__name__, 'start')
-        if AppConfig.plot.max_values<200:
-            self.warning(__name__, 'plot_max_values < 200, recommended ~400')
-        elif AppConfig.plot.max_time<=300 and AppConfig.plot.max_values<AppConfig.plot.max_time:
-            self.warning(__name__, 'plot_max_values < plot_max_time. recommended value is plot_max_time * 4 or ~400')
 
     def init_vars(self):
         self.debug(__name__, 'init_vars')
@@ -85,7 +77,7 @@ class MainAppCli(Plot.Plot):
         ]
 
         self.ax = []
-        self.lines = [ [], [] ] # lines for ax[0], ax[1]
+        # self.lines = [ [], [] ] # lines for ax[0], ax[1]
 
         self.reset_values()
         self.reset_avg()
@@ -130,9 +122,10 @@ class MainAppCli(Plot.Plot):
         self.stats[name] += value
 
     def reset_values(self):
+        self.debug(__name__, 'reset values')
         self.lock.acquire()
-        self.reset_data()
         try:
+            self.reset_data()
             self.stats = {}
             self.start_time = time.monotonic()
             self.compressed_ts = -1
@@ -200,6 +193,7 @@ class MainApp(MainAppCli):
             'plot_display_energy': DISPLAY_ENERGY.WH, #AppConfig.plot.display_energy,
             'plot_time_scale': 1.0
         }
+        e = ''
         try:
             file = AppConfig.get_filename('config_state.json')
             self.debug(__name__, 'read gui config %s', file)
@@ -235,231 +229,41 @@ class MainApp(MainAppCli):
                 self._scheduler.cancel(item)
         self._scheduler.enter(10.0, SCHEDULER_PRIO.WRITE_GUI_CONFIG, self._write_gui_config)
 
+    def import_tkinter(self):
+        global Gui, tk, ttk, font, tkinter, animation, Figure, FigureCanvasTkAgg, NavigationToolbar2Tk
+        # import matplotlib
+        # matplotlib.use('tkagg')
+        from .Gui import Gui
+        import tkinter
+        from tkinter import font
+        import tkinter as tk
+        from tkinter import ttk
+        import tkinter.messagebox
+        import matplotlib.animation as animation
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
+        return (Gui, tk, ttk, font, tkinter, animation, Figure, FigureCanvasTkAgg, NavigationToolbar2Tk)
+
     def __init_gui__(self):
 
         self.debug(__name__, 'starting with GUI')
-
-        def import_gui():
-            global Gui, tk, ttk, font, tkinter, animation, Figure, FigureCanvasTkAgg, NavigationToolbar2Tk
-            from .Gui import Gui
-            import tkinter
-            from tkinter import font
-            import tkinter as tk
-            from tkinter import ttk
-            import tkinter.messagebox
-            import matplotlib.animation as animation
-            from matplotlib.figure import Figure
-            from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
-
-        import_gui()
+        self.import_tkinter()
 
         self.read_gui_config()
-
         self._gui = Gui(self)
 
         # color scheme and screen size
         self.init_scheme()
-
-        # init TK
-
-        self._gui.configure(bg=self.BG_COLOR)
-
-        top = tk.Frame(self._gui)
-        top.pack(side=tkinter.TOP)
-        top.place(relwidth=1.0, relheight=1.0)
-
-        # plot
-
-        self.fig = Figure(figsize=(3, 3), dpi=self.PLOT_DPI, tight_layout=True, facecolor=self.BG_COLOR)
-
-        # axis
-
-        ax = self.fig.add_subplot(131, facecolor=self.PLOT_BG)
-        ax.autoscale(False)
-        ax.margins(0.01, 0.01)
-        self.ax.append(ax)
-
-        for channel in self.channels:
-            self.ax.append(self.fig.add_subplot((331 + int(channel)), facecolor=self.PLOT_BG))
-
-        self.set_plot_geometry()
-
-        for ax in self.ax:
-            ax.grid(True, color=self.PLOT_GRID, axis='both')
-            ax.set_xticks([])
-            ax.set_xticklabels([])
-
-        ticks_params = {
-            'labelcolor': self.PLOT_TEXT,
-            'axis': 'y',
-            'labelsize': self._fonts.plot_font.cget('size'),
-            'width': 0,
-            'length': 0,
-            'pad': 1
-        }
-
-        # self.ax[0].set_ylabel('Current (A)', color=self.PLOT_TEXT, **self.PLOT_FONT)
-        # self.ax[0].tick_params(**ticks_params)
-        for ax in self.ax:
-            ax.tick_params(**ticks_params)
-
-        for channel in self.channels:
-            ax = self.ax[channel.number]
-            ax.ticklabel_format(axis='y', style='plain', scilimits=(0, 0), useOffset=False)
-
-        # lines
-
-        self.set_main_plot()
-
-        for channel in self.channels:
-            ax = self.ax[channel.number]
-            line, = ax.plot(self.values.time(), self.values[channel].voltage(), color=channel._color_for('U'), label=channel.name + ' U', linewidth=2)
-            self.lines[1].append(line)
-
-        self.legend()
-
-        # top labels
-
-        # label_font_size = [32, 28, 18]
-
-        # self._fonts.label_font.configure(size=label_font_size[len(self.channels) - 1])
-        # setattr(self._fonts.label_font, '_org_size', label_font_size[len(self.channels) - 1])
-
-        label_config = {
-            'font': self._fonts.label_font,
-            'bg': self.BG_COLOR,
-            'fg': 'white',
-            'anchor': 'center'
-        }
-
-        # top frame for enabled channels
-        # 1 colum per active channel
-        top_frames = [
-            { 'relx': 0.0, 'rely': 0.0, 'relwidth': 1.0, 'relheight': 0.12 },
-            { 'relx': 0.0, 'rely': 0.0, 'relwidth': 0.5, 'relheight': 0.17 },
-            { 'relx': 0.0, 'rely': 0.0, 'relwidth': 0.33, 'relheight': 0.17 }
-        ]
-        top_frame = top_frames[len(self.channels) - 1]
-
-        # add plot to frame before labels for the z order
-
-        self.canvas = FigureCanvasTkAgg(self.fig, self._gui)
-        self.canvas.draw()
-        # self.canvas.get_tk_widget().pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=0, padx=0)
-        self.canvas.get_tk_widget().pack()
-
-        gui = {}
-        try:
-            with open(AppConfig.get_filename(self.get_gui_scheme_config_filename()), 'r') as f:
-                gui = json.loads(f.read())
-        except Exception as e:
-            self.debug(__name__, 'failed to write GUI config: %s', e)
-            gui = {}
-
-        gui['geometry'] = self._geometry_info
-
-        padding_y = { 1: 100, 2: 70, 3: 70 }
-        pady = -1 / padding_y[len(self.channels)]
-        padx = -1 / 50
-        y = top_frame['relheight'] + pady
-        if 'plot_placement' in gui:
-            plot_placement = gui['plot_placement']
-        else:
-            plot_placement = {
-                'relwidth': 1.0-padx,
-                'relheight': 1-y-pady*2,
-                'rely': y,
-                'relx': padx
-            }
-            gui['plot_placement'] = plot_placement
-
-        self.ani_interval = AppConfig.plot.refresh_interval
-        self.canvas.get_tk_widget().place(in_=top, **plot_placement)
-        self.ani = animation.FuncAnimation(self.fig, self.plot_values, interval=ANIMATION.INIT)
-
-        # label placement for the enabled channels
-        if 'label_places' in gui:
-            places = gui['label_places'].copy()
-        else:
-            places = []
-            pad = 1 / 200
-            pad2 = pad * 2
-            if len(self.channels)==1:
-                # 1 row 4 cols
-                w = 1 / 4
-                h = 1.0
-                for i in range(0, 4):
-                    x = i / 4
-                    places.append({'relx': x + pad, 'rely': pad, 'relwidth': w - pad2, 'relheight': h - pad2})
-            elif len(self.channels)==2:
-                # 2x 2 row 2 cols
-                w = 1 / 2
-                h = 1 / 2
-                for i in range(0, 8):
-                    x = (i % 2) / 2
-                    y = (int(i / 2) % 2) * h
-                    places.append({'relx': x + pad, 'rely': y + pad, 'relwidth': w - pad2, 'relheight': h - pad2})
-            elif len(self.channels)==3:
-                # 3x 2 row 2 cols
-                w = 1 / 3
-                h = 1 / 2
-                for i in range(0, 12):
-                    x = (i % 2) / 3
-                    y = (int(i / 2) % 2) * h
-                    places.append({'relx': x + pad, 'rely': y + pad, 'relwidth': w - pad2, 'relheight': h - pad2})
-            gui['label_places'] = places.copy()
-
-        for channel in self.channels:
-            ch = int(channel)
-            label_config['fg'] = channel.color
-
-            frame = tk.Frame(self._gui, bg=self.BG_COLOR)
-            frame.pack()
-            frame.place(in_=top, **top_frame)
-            top_frame['relx'] += top_frame['relwidth']
-
-            label = tk.Label(self._gui, text="- V", **label_config)
-            label.pack(in_=frame)
-            label.place(in_=frame, **places.pop(0))
-            self.labels[ch]['U'] = label
-
-            label = tk.Label(self._gui, text="- A", **label_config)
-            label.pack(in_=frame)
-            label.place(in_=frame, **places.pop(0))
-            self.labels[ch]['I'] = label
-
-            label = tk.Label(self._gui, text="- W", **label_config)
-            label.pack()
-            label.place(in_=frame, **places.pop(0))
-            self.labels[ch]['P'] = label
-
-            label = tk.Label(self._gui, text="- Wh", **label_config)
-            label.pack()
-            label.place(in_=frame, **places.pop(0))
-            self.labels[ch]['e'] = label
-
-        frame = tk.Frame(self._gui, bg='#999999')
-        frame.pack()
-        frame.place(in_=top, relx=0.5, rely=2.0, relwidth=0.8, relheight=0.25, anchor='center')
-        self.popup_frame = frame
-        label = tk.Label(self._gui, text="", font=('Verdana', 26), bg='#999999', fg='#ffffff', anchor='center')
-        label.pack(in_=self.popup_frame, fill=tkinter.BOTH, expand=True)
-        self.popup_label = label
-        self.popup_hide_timeout = None
-
-        if AppConfig._debug:
-            label = tk.Label(self._gui, text="", font=('Verdana', 12), bg='#333333', fg=self.TEXT_COLOR, anchor='nw', wraplength=self._gui.winfo_width()) #self._geometry_info[0])
-            label.pack()
-            label.place(in_=top, relx=0.0, rely=1.0-0.135 + 2.0, relwidth=1.0, relheight=0.13)
-            self.debug_label = label
-            self.debug_label_state = 2
-        try:
-            with open(AppConfig.get_filename(self.get_gui_scheme_config_filename(True)), 'w') as f:
-                f.write(json.dumps(gui, indent=2))
-        except Exception as e:
-            self.debug(__name__, 'failed to write GUI config: %s', e)
+        self.init_plot()
 
         self._gui.init_bindings()
+        self._gui.bind('<F6>', self.debugf6)
+
+    def debugf6(self, event=None):
+        # self.plot_values(-1)
+        self.canvas.draw()
+        # self.canvas.flush_events()
+
 
     def window_resize(self):
         pass
@@ -482,7 +286,70 @@ class MainApp(MainAppCli):
 
 
     def destroy(self):
+        if self.ani:
+            self.debug(__name__, 'stop animation')
+            self.ani.event_source.stop()
         self._gui.destroy()
+
+    # def ani_callback(self, i=None):
+    #     self.debug(__name__, 'animation callback %u', i)
+
+    def ani_start(self):
+        self.ani_interval = AppConfig.plot.refresh_interval
+        self.debug(__name__, 'start animation %u', self.ani_interval)
+        self.lock.acquire()
+        try:
+            self.ani = animation.FuncAnimation(self.fig, self.plot_values, interval=self.ani_interval, blit=True)
+            self.canvas.draw_idle()
+        except:
+            AppConfig._debug_exception(e)
+
+        finally:
+            self.lock.release()
+
+
+    def ani_schedule_start(self, time=0.01):
+        self._scheduler.enter(time, 100, self.ani_start)
+
+    def ani_get_speed_type(self):
+        return self.ani_interval==AppConfig.plot.refresh_interval
+
+    def ani_get_speed(self, fast=True):
+        if fast:
+            return AppConfig.plot.refresh_interval
+        return AppConfig.plot.idle_refresh_interval
+
+    def ani_update(self):
+        self.lock.acquire()
+        try:
+            self.ani.event_source.stop()
+            self.canvas.draw()
+            self.canvas.flush_events()
+            self.ani = None
+            self.ani_schedule_start()
+            # self.ani.event_source.start()
+        finally:
+            self.lock.release()
+
+    def ani_toggle_speed(self, event=None):
+        self.debug(__name__, 'toggle animation speed %u', self.ani_interval)
+        if not self.ani:
+            self.error(__name__, 'animation not running')
+            return
+        self.lock.acquire()
+        try:
+            if self.ani_interval==AppConfig.plot.refresh_interval:
+                self.ani_interval = AppConfig.plot.idle_refresh_interval
+            else:
+                self.ani_interval = AppConfig.plot.refresh_interval
+            self.debug(__name__, 'animation interval %u' % self.ani_interval)
+            self.ani.event_source.stop()
+            self.ani.event_source.interval = self.ani_interval
+            self.ani.event_source.start()
+        finally:
+            self.lock.release()
+
+        return "break"
 
     def mainloop(self):
         self.debug(__name__, 'mainloop gui=%s' % (self._gui and 'enabled' or 'disabled'))
@@ -547,53 +414,9 @@ class MainApp(MainAppCli):
         self.PLOT_DPI = 200
         self.LABELS_PADX = 10
 
-    def animation_set_state(self, pause=True, interval=None):
-        self.lock.acquire()
-        try:
-            is_running = self.animation_is_running()
-            self.debug(__name__, 'animation_set_state pause=%s interval=%u set=%s is_running=%s' % (pause, self.ani_interval, str(interval), is_running))
-            if pause:
-                if is_running:
-                    self.debug(__name__, 'stopping animation')
-                    self.ani.event_source.stop()
-                self.ani.event_source.interval = ANIMATION.PAUSED
-            else:
-                if interval!=None:
-                    self.ani_interval = interval
-                self.ani.event_source.interval = self.ani_interval
-                if not is_running:
-                    self.debug(__name__, 'starting animation')
-                    self.ani.event_source.start()
-        finally:
-            self.lock.release()
-
-    def animation_get_state(self):
-        if self.ani.event_source.interval in ANIMATION.STATES:
-            return self.ani.event_source.interval
-        return ANIMATION.RUNNING
-
-    def animation_is_running(self):
-        return not self.ani.event_source.interval in ANIMATION.STATES
-
-    def animation_compare_interval(self, interval):
-        return self.animation_is_running() and self.ani_interval==interval
-
     def set_screen_update_rate(self, fast=True):
-        if fast:
-            rate = AppConfig.plot.refresh_interval
-        else:
-            rate = AppConfig.plot.idle_refresh_interval
-
-        if not self.animation_is_running(): # set rate if paused
-            self.debug(__name__, 'changing animation update rate: %u (paused)' % rate)
-            self.ani_interval = rate
-            return
-
-        if not self.animation_compare_interval(rate):
-            self.debug(__name__, 'changing animation update rate: %u' % rate)
-            self.animation_set_state(False, rate)
-        # else:
-            # self.debug(__name__, 'animation update rate already set: %u' % rate)
+        if self.ani_get_speed_type()==fast:
+            self.ani_toggle_speed()
 
     def get_gui_scheme_config_filename(self, auto=''):
         if auto==True:
@@ -630,6 +453,8 @@ class MainApp(MainAppCli):
                     self.labels[channel]['I'].place(**places.pop(0))
                     self.labels[channel]['P'].place(**places.pop(0))
                     self.labels[channel]['e'].place(**places.pop(0))
+
+            self.ani_update()
 
         except Exception as e:
             self.error(__name__, 'reloading GUI failed: %s' % e)
@@ -668,7 +493,9 @@ class MainApp(MainAppCli):
         self._gui_config.plot_time_scale = self._gui_config.plot_time_scale + 0.10 * event
         self._gui_config.plot_time_scale = min(1.0, max(0.0, self._gui_config.plot_time_scale))
         self.legend();
+        self.ani_update()
         self.show_popup('%u of %u seconds (%.1f%%)' % (self.get_time_scale(), AppConfig.plot.max_time, self._gui_config.plot_time_scale * 100))
+        # self.change_averaging_mode(self.get_time_scale())
         return "break"
 
     def store_values(self, event=None):
@@ -685,20 +512,16 @@ class MainApp(MainAppCli):
         self.debug(__name__, event)
         return "break"
 
-    def toggle_animation(self, event=None):
-        self.debug(__name__, 'toggle_animation running=%s' % self.animation_is_running())
-        self.animation_set_state(pause=self.animation_is_running())
-        return 'break'
-
     def toggle_plot_visibility(self, event=None):
         self._gui_config.plot_visibility = Tools.EnumIncr(self._gui_config.plot_visibility)
-        self.set_plot_geometry
-        self.canvas.draw()
+        self.set_plot_geometry()
+        self.ani_update()
         return 'break'
 
     def set_plot_geometry(self):
         idx = 0
-        for ax in self.ax:
+        for data in self._ax_data:
+            ax = data.ax
             n = self.get_plot_geometry(idx)
             self.debug(__name__, 'idx=%u visibility=%s get_plot_geometry=%s', idx, str(self._gui_config.plot_visibility), n)
             if n!=None:
@@ -711,12 +534,12 @@ class MainApp(MainAppCli):
     def toggle_primary_display(self, event=None):
         self._gui_config.plot_primary_display = Tools.EnumIncr(self._gui_config.plot_primary_display)
         self.set_main_plot()
-        self.canvas.draw()
+        self.ani_update()
         return 'break'
 
     def toggle_display_energy(self, event=None):
         self._gui_config.plot_display_energy = Tools.EnumIncr(self._gui_config.plot_display_energy)
-        self.canvas.draw()
+        self.ani_update()
         return 'break'
 
     def show_popup(self, msg, timeout=3.5):

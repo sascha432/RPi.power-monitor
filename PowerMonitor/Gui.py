@@ -96,7 +96,7 @@ class Gui(tk.Tk):
                     except Exception as e:
                         raise ValueError('invalid key binding: %s: %s: %s' % (key, str(func), e))
 
-        self._parent.canvas.get_tk_widget().bind('<Button-1>', self._parent.button_1)
+        # self._parent.canvas.get_tk_widget().bind('<Button-1>', self._parent.button_1)
 
     def toggle_fullscreen(self, event=None):
         if not 'win' in sys.platform:

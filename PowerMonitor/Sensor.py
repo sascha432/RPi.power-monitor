@@ -13,6 +13,8 @@ import shutil
 import copy
 import json
 
+INA3211_CONFIG = SDL_Pi_INA3221.INA3211_CONFIG
+
 class Sensor(Mqtt.Mqtt):
 
     def __init__(self):
@@ -23,9 +25,17 @@ class Sensor(Mqtt.Mqtt):
 
         self._energy_backp_file_num = 0
         self._read_sensor_thread_state = {'quit': False}
+        self._read_count = 0
 
-        self.ina3221 = SDL_Pi_INA3221.INA3221(addr=AppConfig.ina3221.i2c_address, avg=AppConfig.ina3221.averaging_mode, vbus_ct=AppConfig.ina3221.vbus_conversion_time, vshunt_ct=AppConfig.ina3221.vshunt_conversion_time, shunt=1)
-        self.info(__name__, 'sensor read interval %.2fms' % (self.ina3221._channel_read_time * 1000))
+
+        if AppConfig.ina3221.auto_mode_sensor_values_per_second!=None and AppConfig.ina3221.auto_mode_sensor_values_per_second!=0:
+            avg, vbus, vshunt, interval, olist = SDL_Pi_INA3221.INA3221.get_interval_params(1 / AppConfig.ina3221.auto_mode_sensor_values_per_second)
+        else:
+            avg = AppConfig.ina3221.averaging_mode
+            vbus = AppConfig.ina3221.vbus_conversion_time
+            vshunt = AppConfig.ina3221.vshunt_conversion_time
+
+        self.ina3221 = SDL_Pi_INA3221.INA3221(addr=AppConfig.ina3221.i2c_address, avg=avg, vbus_ct=vbus, vshunt_ct=vbus, shunt=1)
 
     def start(self):
         self.debug(__name__, 'start')
@@ -37,6 +47,16 @@ class Sensor(Mqtt.Mqtt):
         self._time_scale_num = 0
         self.ina3221._calibration = ChannelCalibration(AppConfig)
         self.reset_data()
+
+    # def change_averaging_mode(self, time):
+    #
+    #     avg = AppConfig.ina3221.averaging_mode
+    #     if time<10:
+    #         avg = INA3211_CONFIG.AVERAGING_MODE.x1
+    #     elif time<30:
+    #         avg = INA3211_CONFIG.AVERAGING_MODE.x4
+    #
+    #     self.ina3221.settings(INA3211_CONFIG.ENABLE_ALL_CHANNELS, avg, AppConfig.ina3221.vbus_conversion_time, AppConfig.ina3221.vshunt_conversion_time)
 
     def reset_data(self):
         self.data = [[], [ [[], [], []], [[], [], []], [[], [], []] ]]
@@ -50,6 +70,7 @@ class Sensor(Mqtt.Mqtt):
 
     def read_sensor_thread(self):
         self.thread_register(__name__)
+        self.info(__name__, 'sensor read interval %.2fms' % (self.ina3221._channel_read_time * 1000))
         try:
             while not self._read_sensor_thread_state['quit']:
                 t = time.monotonic()
@@ -108,17 +129,21 @@ class Sensor(Mqtt.Mqtt):
                             if t>self.energy['stored'] + AppConfig.store_energy_interval:
                                 self.energy['stored'] = t;
                                 self.store_energy()
+
                     finally:
                         self.lock.release()
 
-
-                # start when ready
-                if self._gui and self.animation_get_state()==ANIMATION.READY:
-                    self.animation_set_state(pause=False)
+                # self.debug(__name__, 'sensor items %u', len(self.data[0]))
 
                 diff = time.monotonic() - t
                 diff = diff>0 and (self.ina3221._channel_read_time - diff) or 0
+                self._read_count += 1
                 self._read_sensor_thread_listener.sleep(diff, self.read_sensor_thread_handler)
+
+                if self._gui and self.ani==None:
+                    self.ani = False
+                    self.debug(__name__, 'start animation from sensor')
+                    self.ani_schedule_start(0.1)
 
         except Exception as e:
             self.error(_name_, str(e))

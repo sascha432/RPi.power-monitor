@@ -168,11 +168,52 @@ class INA3221():
         self._bus = smbus.SMBus(twi)
         self._addr = addr
         self._shunt = shunt
+        self.settings(channels, avg, vbus_ct, vshunt_ct)
+
+        # for i in [10000,100,20,10,5,2,0.5,0.1,0.5,0.01,0.001]:
+        #     g=self.get_interval_params(1/i)
+        #     print(i,g,1/i,1/g[3])
+        # sys.exit(0)
+
+    def settings(self, channels, avg, vbus_ct, vshunt_ct):
         self._config = channels | vbus_ct._value_ | vshunt_ct._value_ | INA3211_CONFIG.MODE | avg._value_
         self._calibration = {}
         self._write_register_little_endian(INA3221_REG_CONFIG, self._config)
+        self._channel_read_time = INA3221.get_interval(avg, vbus_ct, vshunt_ct)
+        # (int(str(avg).split('.')[-1][1:]) * (int(str(vbus_ct).split('.')[-1].split('_')[1]) + int(str(vshunt_ct).split('.')[-1].split('_')[1]))) / 1000000.0
+        # self._channel_read_time *= 0.95
 
-        self._channel_read_time = (int(str(avg).split('.')[-1][1:]) * (int(str(vbus_ct).split('.')[-1].split('_')[1]) + int(str(vshunt_ct).split('.')[-1].split('_')[1]))) / 1000000.0
+    def get_interval(avg, vbus_ct, vshunt_ct):
+        return ((int(str(avg).split('.')[-1][1:]) * (int(str(vbus_ct).split('.')[-1].split('_')[1]) + int(str(vshunt_ct).split('.')[-1].split('_')[1]))) / 1000000.0) * 0.95
+
+    # get parameters for given interval
+    # from  0.000266s (0.266ms) 3760/sec
+    # to    16.04s 3.734/min
+    #
+    # mode, vbus_ct, vshunt_ct, interval, all_combinations_ordered = INA3221.get_interval_params(time)
+    #
+    # time          time is seconds
+    # lowest_ct     True to get the lowest value for vbus/vshunt
+    def get_interval_params(time, lowest_ct=False):
+
+        items = []
+
+        from_list = list(INA3211_CONFIG.VBUS_CONVERSION_TIME)
+        if lowest_ct:
+            from_list.reverse()
+
+        for mode in INA3211_CONFIG.AVERAGING_MODE:
+            last = None
+            for voltage in from_list:
+                items.append((mode, voltage, INA3211_CONFIG.VSHUNT_CONVERSION_TIME(voltage._value_ >> 3), INA3221.get_interval(mode, voltage, voltage)))
+
+        items = sorted(items, key=lambda item: item[3])
+        result = items[0]
+        for item in items:
+            if time>=item[3]:
+                result = item
+
+        return (*result, items)
 
     def _write(self, register, data):
         #print "addr =0x%x register = 0x%x data = 0x%x " % (self._addr, register, data)

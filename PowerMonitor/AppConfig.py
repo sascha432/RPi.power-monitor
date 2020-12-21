@@ -19,7 +19,7 @@ class App(Base):
     store_energy_interval = TimeConverter.value(60)
 
     idle_check_interval = TimeConverter.value(2, 's')
-    idle_check_cmd = '/usr/bin/xset -display "{DISPLAY}" q | /bin/grep "Monitor is On"'
+    idle_check_cmd = '/usr/bin/xset -display {DISPLAY} q | /bin/grep -q "Monitor is On"'
 
     headless = False
     verbose = False
@@ -69,21 +69,21 @@ class Plot(Base):
     max_time = TimeConverter.value(900)
     line_width = 1.0
 
-    display_energy = EnumConverter.value(Enums.DISPLAY_ENERGY.AH, Enums.DISPLAY_ENERGY)
+    display_energy = Enums.DISPLAY_ENERGY.AH
 
     current_top_margin = MarginConverter.top_value(5),                  # +5% / 105%
-    current_bottom_margin = MarginConverter.bottom_value(15),           # -15% / 85%
+    current_bottom_margin = MarginConverter.bottom_value(10),           # -10% / 90%
     current_rounding = 0.1                                              # 100mA
 
-    power_top_margin = MarginConverter.top_value(5),#TODO add
-    power_bottom_margin = MarginConverter.bottom_value(5),#TODO add
+    power_top_margin = MarginConverter.top_value(5),
+    power_bottom_margin = MarginConverter.bottom_value(10),
     power_rounding = 0.5                                                # 0.5W
 
     y_limit_scale_time = TimeConverter.value(5.0)
     y_limit_scale_value = 0.05
 
-    voltage_top_margin = MarginConverter.top_value(2.5),
-    voltage_bottom_margin = MarginConverter.bottom_value(2.5),
+    voltage_top_margin = MarginConverter.top_value(1),
+    voltage_bottom_margin = MarginConverter.bottom_value(1),
     voltage_rounding = 0.1                                              # 100mV
 
     def __init__(self, struct):
@@ -128,9 +128,10 @@ class KeyBindings(Base):
 class Ina3221(Base):
 
     i2c_address = 0x040
-    averaging_mode = EnumConverter.value(INA3211_CONFIG.AVERAGING_MODE.x512, INA3211_CONFIG.AVERAGING_MODE)
-    vshunt_conversion_time = EnumConverter.value(INA3211_CONFIG.VSHUNT_CONVERSION_TIME.time_140_us, INA3211_CONFIG.VSHUNT_CONVERSION_TIME)
-    vbus_conversion_time = EnumConverter.value(INA3211_CONFIG.VBUS_CONVERSION_TIME.time_140_us, INA3211_CONFIG.VBUS_CONVERSION_TIME)
+    auto_mode_sensor_values_per_second = (0.0, (float, int, None,))
+    averaging_mode = INA3211_CONFIG.AVERAGING_MODE.x16
+    vshunt_conversion_time = INA3211_CONFIG.VSHUNT_CONVERSION_TIME.time_1100_us
+    vbus_conversion_time = INA3211_CONFIG.VBUS_CONVERSION_TIME.time_1100_us
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)

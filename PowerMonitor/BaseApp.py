@@ -147,7 +147,7 @@ class BaseApp(object):
             index = 0
             for thread in self._thread_idents:
                 if thread[0]==name:
-                    self.debug(__name__, 'remove thread %s pid %u (%s)' % (thread[0], thread[1], self.get_pids()))
+                    self.debug(__name__, 'remove thread %s ident %u (%s)' % (thread[0], thread[1], self.get_pids()))
                     del self._thread_idents[index]
                     break
                 index += 1
@@ -165,7 +165,10 @@ class BaseApp(object):
         try:
             while not self.terminate.is_set():
                 self._scheduler.run(False)
+
+                # self.plot_values(2, True)
                 self.terminate.wait(0.25)
+
             self.thread_unregister(__name__)
         except Exception as e:
             AppConfig._debug_exception(e)
