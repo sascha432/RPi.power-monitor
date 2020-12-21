@@ -415,7 +415,7 @@ class MainApp(MainAppCli):
         self.LABELS_PADX = 10
 
     def set_screen_update_rate(self, fast=True):
-        if self.ani_get_speed_type()==fast:
+        if self.ani_get_speed_type()!=fast:
             self.ani_toggle_speed()
 
     def get_gui_scheme_config_filename(self, auto=''):

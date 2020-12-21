@@ -19,7 +19,9 @@ class App(Base):
     store_energy_interval = TimeConverter.value(60)
 
     idle_check_interval = TimeConverter.value(2, 's')
-    idle_check_cmd = '/usr/bin/xset -display {DISPLAY} q | /bin/grep -q "Monitor is On"'
+    idle_check_cmd = '/usr/bin/xset -display {DISPLAY} q'
+    idle_check_monitor_on = '^\s*monitor is on'
+    idle_check_monitor_off = '^\s*monitor is off'
 
     headless = False
     verbose = False
@@ -27,7 +29,6 @@ class App(Base):
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)
-
 
     _debug = False
     _terminate = None
