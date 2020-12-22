@@ -9,7 +9,7 @@ import numpy as np
 import EventManager
 import json
 from collections import namedtuple
-from . import FormatFloat, Sensor, Tools, PLOT_VISIBILITY, PLOT_PRIMARY_DISPLAY, ANIMATION, SCHEDULER_PRIO, DISPLAY_ENERGY
+from . import FormatFloat, Sensor, Tools, PLOT_VISIBILITY, PLOT_PRIMARY_DISPLAY, SCHEDULER_PRIO, DISPLAY_ENERGY
 
 class Plot(Sensor.Sensor):
 
@@ -22,7 +22,6 @@ class Plot(Sensor.Sensor):
         self._time_scale_items = self.get_time_scale_list()
         self._plot_thread_state = {'quit': False}
         self.ani = None
-        self.ani_interval = 1000
         self._canvas_update_required = False
 
     def start(self):
@@ -32,7 +31,6 @@ class Plot(Sensor.Sensor):
 
     def init_vars(self):
         self.debug(__name__, 'init_vars')
-        self._time_scale_num = 0
 
         # []*4
         # [0] = axis 0, lines[]*3 current or power channel 1-3
@@ -40,6 +38,7 @@ class Plot(Sensor.Sensor):
         # [2] = axis 2, lines[]*1 voltage channel 2
         # [3] = axis 3, lines[]*1 voltage channel 3
         self._ax_data = []
+        self._time_scale_num = 0
 
     def ticks_params(self):
         return {
@@ -67,8 +66,6 @@ class Plot(Sensor.Sensor):
 
         # axis 0
         ax = self.fig.add_subplot(self.get_plot_geometry(0, PLOT_VISIBILITY.BOTH), facecolor=self.PLOT_BG)
-        ax.autoscale(False)
-        ax.margins(0.01, 0.01)
         self._ax_data.append(namedtuple('AxisData%u' % len(self._ax_data), ('ax', 'background', 'lines', 'legend')))
         self._ax_data[-1].ax = ax
         self._ax_data[-1].lines = []
@@ -88,6 +85,8 @@ class Plot(Sensor.Sensor):
             data.ax.set_xticklabels([])
             data.ax.tick_params(**self.ticks_params())
             data.ax.ticklabel_format(axis='y', style='plain', useOffset=False)
+            ax.autoscale(axis='x', tight=True)
+            ax.margins(0.01, 0.01)
 
         # # add before reconfigure_axis
         # idx = 1
@@ -147,7 +146,6 @@ class Plot(Sensor.Sensor):
             }
             gui['plot_placement'] = plot_placement
 
-        self.ani_interval = AppConfig.plot.refresh_interval
         self.canvas.get_tk_widget().place(in_=top, **plot_placement)
 
         # label placement for the enabled channels
@@ -358,8 +356,21 @@ class Plot(Sensor.Sensor):
             raise KeyError('axis: %s channel: %s exception: %s: %s %s' % (axis, channel, e, self._ax_data, self._ax_data[axis]))
         return None
 
+    def set_plot_geometry(self):
+        idx = 0
+        for data in self._ax_data:
+            ax = data.ax
+            n = self.get_plot_geometry(idx)
+            self.debug(__name__, 'idx=%u visibility=%s get_plot_geometry=%s', idx, str(self._gui_config.plot_visibility), n)
+            if n!=None:
+                ax.set_visible(True)
+                ax.change_geometry(int(n / 100) % 10, int(n / 10) % 10, int(n) % 10)
+            elif ax:
+                ax.set_visible(False)
+            idx += 1
+
     def reconfigure_axis(self):
-        if not self._plot_lock.acquire(True, 5.0):
+        if not self._plot_lock.acquire(False):
             self.error(__name__, 'reconfigure_axis could not acquire lock')
             return
         try:
@@ -442,6 +453,27 @@ class Plot(Sensor.Sensor):
             return []
         try:
             self.aggregate_sensor_values()
+
+            n = len(self.values._t)
+            for index, channel in self.channels.items():
+                n = min(n, len(self.values[index].U), len(self.values[index].I), len(self.values[index].P))
+            if n!=len(self.values._t):
+                tmp = {'t': len(self.values._t)}
+                self.values._t = self.values._t[0:n]
+                for index, channel in self.channels.items():
+                    tmp[index] = {
+                        'U': len(self.values[index].U),
+                        'I': len(self.values[index].I),
+                        'P': len(self.values[index].P),
+                    }
+                    self.values[index].U = self.values[index].U[0:n]
+                    self.values[index].I = self.values[index].I[0:n]
+                    self.values[index].P = self.values[index].P[0:n]
+                self.error(__name__, "data mismatch %u %u %s" % (n, len(self.values._t), tmp))
+
+            if n==0:
+                return []
+
 
             fmt = FormatFloat.FormatFloat(4, 5, prefix=FormatFloat.PREFIX.M, strip=FormatFloat.STRIP.NONE)
             fmt.set_precision('m', 1)
@@ -542,6 +574,7 @@ class Plot(Sensor.Sensor):
             if x_max!=None:
                 for data in self._ax_data:
                     data.ax.set_xlim(left=x_max-self.get_time_scale(), right=x_max)
+                    data.ax.relim()
 
             # for data in self._ax_data:
             #     data.ax.autoscale_view()
@@ -568,84 +601,61 @@ class Plot(Sensor.Sensor):
 
             artists.append(self._ax_data[0].legend)
 
-
-                # data.ax.autoscale_view()
-                # data.ax.relim()
-                # for data in self._ax_data:
-                #     for child in data.ax.get_children():
-                #         artists.append(child)
-
-# <class 'matplotlib.lines.Line2D'> Line2D(Channel 1 (5V))
-# <class 'matplotlib.lines.Line2D'> Line2D(Channel 2 (12V))
-# <class 'matplotlib.spines.Spine'> Spine
-# <class 'matplotlib.spines.Spine'> Spine
-# <class 'matplotlib.spines.Spine'> Spine
-# <class 'matplotlib.spines.Spine'> Spine
-# <class 'matplotlib.axis.XAxis'> XAxis(75.0,65.99999999999999)
-# <class 'matplotlib.axis.YAxis'> YAxis(75.0,65.99999999999999)
-# <class 'matplotlib.text.Text'> Text(0.5, 1.0, '')
-# <class 'matplotlib.text.Text'> Text(0.0, 1.0, '')
-# <class 'matplotlib.text.Text'> Text(1.0, 1.0, '')
-# <class 'matplotlib.legend.Legend'> Legend
-# <class 'matplotlib.patches.Rectangle'> Rectangle(xy=(0, 0), width=1, height=1, angle=0)
-# <class 'matplotlib.lines.Line2D'> Line2D(Channel 1 (5V) U)
-# <class 'matplotlib.spines.Spine'> Spine
-# <class 'matplotlib.spines.Spine'> Spine
-# <class 'matplotlib.spines.Spine'> Spine
-# <class 'matplotlib.spines.Spine'> Spine
-# <class 'matplotlib.axis.XAxis'> XAxis(328.63636363636357,318.0)
-# <class 'matplotlib.axis.YAxis'> YAxis(328.63636363636357,318.0)
-# <class 'matplotlib.text.Text'> Text(0.5, 1.0, '')
-# <class 'matplotlib.text.Text'> Text(0.0, 1.0, '')
-# <class 'matplotlib.text.Text'> Text(1.0, 1.0, '')
-# <class 'matplotlib.patches.Rectangle'> Rectangle(xy=(0, 0), width=1, height=1, angle=0)
-# <class 'matplotlib.lines.Line2D'> Line2D(Channel 2 (12V) U)
-# <class 'matplotlib.spines.Spine'> Spine
-# <class 'matplotlib.spines.Spine'> Spine
-# <class 'matplotlib.spines.Spine'> Spine
-# <class 'matplotlib.spines.Spine'> Spine
-# <class 'matplotlib.axis.XAxis'> XAxis(328.63636363636357,65.99999999999999)
-# <class 'matplotlib.axis.YAxis'> YAxis(328.63636363636357,65.99999999999999)
-# <class 'matplotlib.text.Text'> Text(0.5, 1.0, '')
-# <class 'matplotlib.text.Text'> Text(0.0, 1.0, '')
-# <class 'matplotlib.text.Text'> Text(1.0, 1.0, '')
-# <class 'matplotlib.patches.Rectangle'> Rectangle(xy=(0, 0), width=1, height=1, angle=0)
-
-
-            # DEBUG DISPLAY
-            if AppConfig._debug:
-                data_n = 0
-                for channel, values in self.values.items():
-                    for type, items in values.items():
-                        data_n += len(items)
-                    # parts.append('%u:#%u' % (channel, len(values[0])))
-                    # for i in range(0, len(values)):
-                    #     data_n += len(values[i])
-
-                p = [
-                    'fps=%.2f' % self.get_plot_fps(),
-                    'data=%u' % data_n
-                ]
-                for key, val in self.stats.items():
-                    if isinstance(val, float):
-                        val = '%.4f' % val
-                    p.append('%s=%s' % (key, val))
-
-                p.append('comp_rrq=%u' % (self.compressed_min_records<AppConfig.plot.compression.min_records and (AppConfig.plot.compression.min_records - self.compressed_min_records) or 0))
-
-                self.debug_label.configure(text=' '.join(p))
+            # data.ax.autoscale_view()
+            # data.ax.relim()
+            # for data in self._ax_data:
+            #     for child in data.ax.get_children():
+            #         artists.append(child)
 
 
             # full update required
             if self._canvas_update_required:
                 self._canvas_update_required = False
                 self.info(__name__, 'canvas update')
-                self.canvas.draw()
-                self.canvas.flush_events()
+                for data in self._ax_data:
+                    data.ax.autoscale_view()
+                    data.ax.relim()
 
-        except Exception as e:
-            AppConfig._debug_exception(e)
+                # artists = []
+                # for data in self._ax_data:
+                #     if data.ax.get_visible():
+                #         artists.extend(data.ax.get_children())
+                # print(artists)
+                self.canvas.draw()
+#                self.canvas.flush_events()
+
+        # except Exception as e:
+        #     AppConfig._debug_exception(e)
         finally:
             self._plot_lock.release()
 
+        self.update_debug_info()
+
         return artists
+
+
+    def update_debug_info(self):
+
+        # DEBUG DISPLAY
+        if AppConfig._debug:
+            data_n = 0
+            for channel, values in self.values.items():
+                for type, items in values.items():
+                    data_n += len(items)
+                # parts.append('%u:#%u' % (channel, len(values[0])))
+                # for i in range(0, len(values)):
+                #     data_n += len(values[i])
+
+            p = [
+                'fps=%.2f' % self.get_plot_fps(),
+                'data=%u' % data_n
+            ]
+            for key, val in self.stats.items():
+                if isinstance(val, float):
+                    val = '%.4f' % val
+                p.append('%s=%s' % (key, val))
+
+            p.append('comp_rrq=%u' % (self.compressed_min_records<AppConfig.plot.compression.min_records and (AppConfig.plot.compression.min_records - self.compressed_min_records) or 0))
+
+            self.debug_label.configure(text=' '.join(p))
+

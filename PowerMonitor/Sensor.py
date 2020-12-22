@@ -4,7 +4,7 @@
 
 from . import Mqtt
 from . import ChannelCalibration
-from . import ANIMATION
+from . import Animation
 import SDL_Pi_INA3221
 import EventManager
 import time
@@ -151,10 +151,9 @@ class Sensor(Mqtt.Mqtt):
                         self._read_count += 1
                         self._read_sensor_thread_listener.sleep(diff, self.read_sensor_thread_handler)
 
-                    if self._gui and self.ani==None:
-                        self.ani = False
-                        self.debug(__name__, 'start animation from sensor')
-                        self.ani_schedule_start(0.1)
+                    if self._gui and self._animation.mode==Animation.Mode.NONE:
+                        self.debug(__name__, 'starting animation from sensor')
+                        self._animation.schedule()
 
                 # if any error occurs, let it finish reading all channels and try to reinitilize here
                 if self._errors>0:

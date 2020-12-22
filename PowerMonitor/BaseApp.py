@@ -2,7 +2,8 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from . import PLOT_VISIBILITY, PLOT_PRIMARY_DISPLAY, ANIMATION, SCHEDULER_PRIO, DISPLAY_ENERGY
+from . import PLOT_VISIBILITY, PLOT_PRIMARY_DISPLAY, SCHEDULER_PRIO, DISPLAY_ENERGY
+from .Animation import Animation
 import EventManager
 import threading
 import time
@@ -40,6 +41,9 @@ class BaseApp(object):
         # data and plot locks
         self._data_lock = threading.Lock()
         self._plot_lock = threading.Lock()
+
+
+        self._animation = Animation(self, AppConfig)
 
         # lock for creating threads
         self.thread_lock = threading.Lock()

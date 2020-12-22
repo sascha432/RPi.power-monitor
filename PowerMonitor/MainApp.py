@@ -14,6 +14,7 @@ import time
 import numpy as np
 import json
 
+
 class GuiConfig(object):
 
     def __init__(self, parent=None, data={}, allowed=None, exception=False):
@@ -37,7 +38,7 @@ class GuiConfig(object):
         object.__setattr__(self, '_disabled', value)
 
     def __setattr__(self, key, val):
-        if self._disabled!=False and not key.startswith('_'):
+        if self._disabled==False and not key.startswith('_'):
             self._parent.write_gui_config()
             if self._allowed==None:
                 return
@@ -62,6 +63,16 @@ class GuiConfig(object):
 class MainAppCli(Plot.Plot):
     def __init__(self):
         self.fullscreen_state = False
+
+    def assign_attrs(self, child):
+        # setattr(child, 'debug', self.debug)
+        # setattr(child, 'info', self.info)
+        # setattr(child, 'warning', self.warning)
+        name = '%s.%s' % (child.__module__, child.__class__.__qualname__)
+        setattr(child, 'debug', lambda *args: self.debug(name, *args))
+        setattr(child, 'info', lambda *args: self.info(name, *args))
+        setattr(child, 'warning', lambda *args: self.warning(name, *args))
+        setattr(child, 'error', lambda *args: self.error(name, *args))
 
     def start(self):
         self.debug(__name__, 'start')
@@ -145,8 +156,19 @@ class MainAppCli(Plot.Plot):
                 self.clear_y_limits(i)
             self.power_sum = [ 1 ]
             self.values = PlotValuesContainer(self.channels)
+            if self._animation.active:
+                self._animation.reset()
         finally:
             self._data_lock.release()
+
+    def reset_plot(self):
+        try:
+            self.ani.event_source.stop()
+            self.ani = None
+        except:
+            self.ani = None
+        self.reset_values()
+        self.reset_data()
 
     def reset_energy(self):
         self.energy = {
@@ -166,6 +188,8 @@ class MainApp(MainAppCli):
         self._logger = logger
         self._app_config = app_config
         self._bases = Tools.get_bases(self.__module__, self.__class__.__qualname__)
+
+        print(self._bases)
 
         for func_name in ('start', 'destroy', 'reload', 'init_vars'):
             obj = Tools.LambdaCaller(Tools.execute_method, (self, self._bases, func_name))
@@ -205,64 +229,23 @@ class MainApp(MainAppCli):
         self_obj.debug(__name__, 'calling __bases__.%s', func_name)
         Tools.execute_method(self_obj, self_obj._bases, func_name, *args, **kwargs)
 
-    def read_gui_config(self):
-        defaults = {
-            'plot_visibility': PLOT_VISIBILITY.BOTH,
-            'plot_primary_display': PLOT_PRIMARY_DISPLAY.CURRENT,
-            'plot_display_energy': DISPLAY_ENERGY.WH, #AppConfig.plot.display_energy,
-            'plot_time_scale': 1.0
-        }
-        e = ''
-        try:
-            file = AppConfig.get_filename('config_state.json')
-            self.debug(__name__, 'read gui config %s', file)
-            with open(file, 'r') as f:
-                data = json.loads(f.read())
-                self._gui_config = GuiConfig(self, data, defaults.keys())
-        except Exception as e:
-            self.info(__name__, 'failed to load: %s: %s', file, e)
-            self._gui_config = GuiConfig(self, defaults, defaults.keys())
-
-        try:
-            self._gui_config.plot_visibility = Tools.EnumFromStr(PLOT_VISIBILITY, self._gui_config.plot_visibility)
-            self._gui_config.plot_display_energy = Tools.EnumFromStr(DISPLAY_ENERGY, self._gui_config.plot_display_energy)
-            self._gui_config.plot_primary_display = Tools.EnumFromStr(PLOT_PRIMARY_DISPLAY, self._gui_config.plot_primary_display)
-            self._gui_config.plot_time_scale = max(0, min(1, float(self._gui_config.plot_time_scale)))
-        except Exception as e:
-            self.info(__name__, 'invalid configuration: %s: %s', file, e)
-            self._gui_config = GuiConfig(self, defaults, defaults.keys())
-            self._gui_config.disabled = False
-
-
-    def _write_gui_config(self):
-        try:
-            file = AppConfig.get_filename('config_state.json')
-            self.debug(__name__, 'write gui config %s', file)
-            with open(file, 'w') as f:
-                f.write(json.dumps(self._gui_config._asdict()))
-        except Exception as e:
-            self.error(__name__, 'failed to store: %s: %s', file, e)
-
-    def write_gui_config(self):
-        for item in self._scheduler.queue:
-            if getattr(item, 'priority')==SCHEDULER_PRIO.WRITE_GUI_CONFIG:
-                self._scheduler.cancel(item)
-        self._scheduler.enter(10.0, SCHEDULER_PRIO.WRITE_GUI_CONFIG, self._write_gui_config)
-
     def import_tkinter(self):
-        from . import Gui
+        from .Gui import Gui
         import tkinter
-        from tkinter import (font, ttk)
+        from tkinter import font, ttk
+        #import tkinter as tk
+        # from tkinter import ttk
+        import tkinter.messagebox
+        # from matplotlib.animation import FuncAnimation
         from matplotlib.figure import Figure
-        import matplotlib
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
         return {
-            'Gui': Gui.Gui,
+            'Gui': Gui,
             'tk': tkinter,
             'ttk': ttk,
             'font': font,
             'tkinter': tkinter,
-            'animation': matplotlib.animation,
+            # 'FuncAnimation': FuncAnimation,
             'Figure': Figure,
             'FigureCanvasTkAgg': FigureCanvasTkAgg
         }
@@ -280,8 +263,12 @@ class MainApp(MainAppCli):
         self.init_plot()
 
         self._gui.init_bindings()
-        # self._gui.bind('<F6>', self.debugf6)
+        self._gui.bind('<F6>', self.debugf6)
 
+    def debugf6(self, event=None):
+        for data in self._ax_data:
+            print(type(data.ax.get_children()))
+            print(data.ax.get_children())
 
     def window_resize(self):
         pass
@@ -302,78 +289,11 @@ class MainApp(MainAppCli):
         # self.legend()
 
 
-
     def destroy(self):
         if self.ani:
             self.debug(__name__, 'stop animation')
             self.ani.event_source.stop()
         self._gui.destroy()
-
-    # def ani_callback(self, i=None):
-    #     self.debug(__name__, 'animation callback %u', i)
-
-    def ani_start(self):
-        self.ani_interval = AppConfig.plot.refresh_interval
-        self.debug(__name__, 'start animation %u', self.ani_interval)
-        if not self._plot_lock.acquire(True, 5.0):
-            self.error(__name__, 'ani_start could not acquire lock')
-            return
-        try:
-            self.ani = animation.FuncAnimation(self.fig, self.plot_values, interval=self.ani_interval, blit=True)
-            self.canvas.draw_idle()
-        except:
-            AppConfig._debug_exception(e)
-        finally:
-            self._plot_lock.release()
-
-    def ani_schedule_start(self, time=0.01):
-        self._scheduler.enter(time, SCHEDULER_PRIO.ANIMATION, self.ani_start)
-
-    def ani_get_speed_type(self):
-        return self.ani_interval==AppConfig.plot.refresh_interval
-
-    def ani_get_speed(self, fast=True):
-        return fast and AppConfig.plot.refresh_interval or AppConfig.plot.idle_refresh_interval
-
-    def ani_update(self):
-        if not self._plot_lock.acquire(True, 1.0):
-            self.error(__name__, 'ani_update could not acquire lock')
-            return
-        try:
-            self._canvas_update_required = True
-            if self.ani:
-                self.error(__name__, 'ani_update without animation object')
-                # probably waiting for the scheduler to start a new animation, just redraw
-                return
-            self.ani.event_source.stop()
-            self.ani.event_source.interval = self.ani_interval
-            # self.ani = None
-            # self.ani_schedule_start()
-            self.ani.event_source.start()
-        finally:
-            self._plot_lock.release()
-
-    def ani_toggle_speed(self, event=None):
-        self.debug(__name__, 'toggle animation speed %u', self.ani_interval)
-        if not self.ani:
-            self.error(__name__, 'animation not running')
-            return
-        if not self._plot_lock.acquire(True, 1.0):
-            self.error(__name__, 'ani_toggle_speed could not acquire lock')
-            return
-        try:
-            if self.ani_interval==AppConfig.plot.refresh_interval:
-                self.ani_interval = AppConfig.plot.idle_refresh_interval
-            else:
-                self.ani_interval = AppConfig.plot.refresh_interval
-            self.debug(__name__, 'animation interval %u' % self.ani_interval)
-            self.ani.event_source.stop()
-            self.ani.event_source.interval = self.ani_interval
-            self.ani.event_source.start()
-        finally:
-            self._plot_lock.release()
-
-        return "break"
 
     def init_scheme(self):
 
@@ -427,15 +347,67 @@ class MainApp(MainAppCli):
         self.PLOT_DPI = 200
         self.LABELS_PADX = 10
 
-    def set_screen_update_rate(self, fast=True):
-        if self.ani_get_speed_type()!=fast:
-            self.ani_toggle_speed()
+    def set_screen_update_rate(self, running=True):
+        if (self._animation.mode!=Animation.Mode.RUNNING)==running:
+            self.mode = Animation.Mode.IDLE
 
     def get_gui_scheme_config_filename(self, auto=''):
         if auto==True:
             auto = '-auto'
         return 'gui-%u-%ux%u%s.json' % (len(self.channels), self._geometry_info[0], self._geometry_info[1], auto)
         # self._geometry_info[1], auto)
+
+    # ---------------------------------------------------------------------------------------------
+    # gui config
+    # ---------------------------------------------------------------------------------------------
+
+    def read_gui_config(self):
+        defaults = {
+            'plot_visibility': PLOT_VISIBILITY.BOTH,
+            'plot_primary_display': PLOT_PRIMARY_DISPLAY.CURRENT,
+            'plot_display_energy': DISPLAY_ENERGY.WH, #AppConfig.plot.display_energy,
+            'plot_time_scale': 1.0
+        }
+        e = ''
+        try:
+            file = AppConfig.get_filename('config_state.json')
+            self.debug(__name__, 'read gui config %s', file)
+            with open(file, 'r') as f:
+                data = json.loads(f.read())
+                self._gui_config = GuiConfig(self, data, defaults.keys())
+        except Exception as e:
+            self.info(__name__, 'failed to load: %s: %s', file, e)
+            self._gui_config = GuiConfig(self, defaults, defaults.keys())
+
+        try:
+            self._gui_config.plot_visibility = Tools.EnumFromStr(PLOT_VISIBILITY, self._gui_config.plot_visibility)
+            self._gui_config.plot_display_energy = Tools.EnumFromStr(DISPLAY_ENERGY, self._gui_config.plot_display_energy)
+            self._gui_config.plot_primary_display = Tools.EnumFromStr(PLOT_PRIMARY_DISPLAY, self._gui_config.plot_primary_display)
+            self._gui_config.plot_time_scale = max(0, min(1, float(self._gui_config.plot_time_scale)))
+        except Exception as e:
+            self.info(__name__, 'invalid configuration: %s: %s', file, e)
+            self._gui_config = GuiConfig(self, defaults, defaults.keys())
+            self._gui_config.disabled = False
+
+
+    def _write_gui_config(self):
+        try:
+            file = AppConfig.get_filename('config_state.json')
+            self.debug(__name__, 'write gui config %s', file)
+            with open(file, 'w') as f:
+                f.write(json.dumps(self._gui_config._asdict()))
+        except Exception as e:
+            self.error(__name__, 'failed to store: %s: %s', file, e)
+
+    def write_gui_config(self):
+        for item in self._scheduler.queue:
+            if getattr(item, 'priority')==SCHEDULER_PRIO.WRITE_GUI_CONFIG:
+                self._scheduler.cancel(item)
+        self._scheduler.enter(10.0, SCHEDULER_PRIO.WRITE_GUI_CONFIG, self._write_gui_config)
+
+    # ---------------------------------------------------------------------------------------------
+    # tk events
+    # ---------------------------------------------------------------------------------------------
 
     def toggle_debug(self, event=None):
         self.debug_label_state = (self.debug_label_state + 1) % 3
@@ -467,7 +439,7 @@ class MainApp(MainAppCli):
                     self.labels[channel]['P'].place(**places.pop(0))
                     self.labels[channel]['e'].place(**places.pop(0))
 
-            self.ani_update()
+            self._animation.update()
 
         except Exception as e:
             self.error(__name__, 'reloading GUI failed: %s' % e)
@@ -506,7 +478,7 @@ class MainApp(MainAppCli):
         self._gui_config.plot_time_scale = self._gui_config.plot_time_scale + 0.10 * event
         self._gui_config.plot_time_scale = min(1.0, max(0.0, self._gui_config.plot_time_scale))
         self.legend();
-        self.ani_update()
+        self._animation.update()
         self.show_popup('%u of %u seconds (%.1f%%)' % (self.get_time_scale(), AppConfig.plot.max_time, self._gui_config.plot_time_scale * 100))
         # self.change_averaging_mode(self.get_time_scale())
         return "break"
@@ -529,31 +501,19 @@ class MainApp(MainAppCli):
         self._gui_config.plot_visibility = Tools.EnumIncr(self._gui_config.plot_visibility)
         self.debug(__name__, 'visibility %s', str(self._gui_config.plot_visibility))
         self.set_plot_geometry()
-        self.ani_update()
+        self.reconfigure_axis()
+        self._animation.update()
         return 'break'
-
-    def set_plot_geometry(self):
-        idx = 0
-        for data in self._ax_data:
-            ax = data.ax
-            n = self.get_plot_geometry(idx)
-            self.debug(__name__, 'idx=%u visibility=%s get_plot_geometry=%s', idx, str(self._gui_config.plot_visibility), n)
-            if n!=None:
-                ax.set_visible(True)
-                ax.change_geometry(int(n / 100) % 10, int(n / 10) % 10, int(n) % 10)
-            elif ax:
-                ax.set_visible(False)
-            idx += 1
 
     def toggle_primary_display(self, event=None):
         self._gui_config.plot_primary_display = Tools.EnumIncr(self._gui_config.plot_primary_display)
         self.reconfigure_axis()
-        self.ani_update()
+        self._animation.update()
         return 'break'
 
     def toggle_display_energy(self, event=None):
         self._gui_config.plot_display_energy = Tools.EnumIncr(self._gui_config.plot_display_energy)
-        self.ani_update()
+        self._animation.update()
         return 'break'
 
     def show_popup(self, msg, timeout=3.5):

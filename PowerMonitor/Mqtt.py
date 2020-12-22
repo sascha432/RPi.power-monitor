@@ -9,6 +9,7 @@ import json
 import copy
 import numpy as np
 import EventManager
+import sys
 
 class Mqtt(Idle.Idle):
 
@@ -23,7 +24,9 @@ class Mqtt(Idle.Idle):
     def start(self):
         self.debug(__name__, 'start')
         if AppConfig.mqtt.host:
-            if self.init_mqtt():
+            if 'win' in sys.platform:
+                self.error(__name__, "MQTT not enabled")
+            elif self.init_mqtt():
                 self.thread_daemonize(__name__, self.mqtt_thread)
 
     def destroy(self):

@@ -4,13 +4,6 @@
 
 from enum import Enum
 
-class ANIMATION:
-    RUNNING = True
-    INIT = 1                      # waiting for the first callback
-    READY = 0xffffa               # ready, animation is stopped
-    PAUSED = 0xffffb              # animation stopped has been paused
-    STATES = (INIT, READY, PAUSED)
-
 class PLOT_PRIMARY_DISPLAY(Enum):
     CURRENT = 0
     POWER = 1
