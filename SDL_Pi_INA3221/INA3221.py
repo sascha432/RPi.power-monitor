@@ -13,15 +13,16 @@ import sys
 try:
     import smbus
 except:
-    # dummy class
-    class smbus:
-        class SMBus:
-            def __init__(self, twi):
-                pass
-            def write_word_data(self, addr, register, switchdata):
-                pass
-            def read_word_data(self, addr, register):
-                return 0
+    if 'win' in sys.platform:
+        # dummy class
+        class smbus:
+            class SMBus:
+                def __init__(self, twi):
+                    pass
+                def write_word_data(self, addr, register, switchdata):
+                    pass
+                def read_word_data(self, addr, register):
+                    return 0
 
 # constants
 
@@ -159,7 +160,7 @@ SHUNT_RESISTOR_VALUE         = (0.1)   # default shunt resistor value of 0.1 Ohm
 
 
 
-class INA3221():
+class INA3221Base():
 
     ###########################
     # INA3221 Code
@@ -311,3 +312,22 @@ class INA3221():
         return self._calibration[channel].get_current_from_shunt(self._getShuntVoltage_raw(channel), 'A')
 
 
+if 'win' in sys.platform:
+
+    import random
+
+    class INA3221(INA3221Base):
+
+        def __init__(self, twi=1, addr=INA3221_ADDRESS, channels=INA3211_CONFIG.ENABLE_ALL_CHANNELS, avg=INA3211_CONFIG.AVERAGING_MODE.DEFAULT, vbus_ct=INA3211_CONFIG.VBUS_CONVERSION_TIME, vshunt_ct=INA3211_CONFIG.VSHUNT_CONVERSION_TIME.DEFAULT, shunt=SHUNT_RESISTOR_VALUE):
+            INA3221Base.__init__(self, twi, addr, channels, avg, vbus_ct, vshunt_ct, shunt)
+
+        def _getBusVoltage_raw(self, channel):
+            return random.randint(4000, 5000)
+
+        def _getShuntVoltage_raw(self, channel):
+            return random.randint(8000, 12000)
+
+else:
+
+    class INA3221(INA3221Base):
+        pass
