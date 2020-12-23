@@ -50,7 +50,7 @@ class Plot(Sensor.Sensor):
         return {
             'labelcolor': self.PLOT_TEXT,
             'axis': 'y',
-            'labelsize': self._fonts.plot_font.cget('size'),
+            'labelsize': AppConfig.plot.font_size,
             'width': 0,
             'length': 0,
             'pad': 1
@@ -68,7 +68,7 @@ class Plot(Sensor.Sensor):
         top.place(relwidth=1.0, relheight=1.0)
 
         # plot
-        self.fig = Figure(figsize=(3, 3), dpi=self.PLOT_DPI, tight_layout=True, facecolor=self.BG_COLOR)
+        self.fig = Figure(figsize=(3, 3), dpi=self.geometry.dpi, tight_layout=True, facecolor=self.BG_COLOR)
 
         # axis 0
         ax = self.fig.add_subplot(self.get_plot_geometry(0, PLOT_VISIBILITY.BOTH), facecolor=self.PLOT_BG)
@@ -86,7 +86,7 @@ class Plot(Sensor.Sensor):
         self.set_plot_geometry()
 
         for data in self._ax_data:
-            data.ax.grid(True, color=self.PLOT_GRID, axis='both')
+            data.ax.grid(True, color=self.PLOT_GRID, axis='both', linewidth=AppConfig.plot.grid_line_width)
             # data.ax.set_xticks([])
             # data.ax.set_xticklabels([])
             data.ax.tick_params(**self.ticks_params())
@@ -112,14 +112,12 @@ class Plot(Sensor.Sensor):
             'anchor': 'center'
         }
 
-        # top frame for enabled channels
-        # 1 colum per active channel
-        top_frames = [
-            { 'relx': 0.0, 'rely': 0.0, 'relwidth': 1.0, 'relheight': 0.12 },
-            { 'relx': 0.0, 'rely': 0.0, 'relwidth': 0.5, 'relheight': 0.17 },
-            { 'relx': 0.0, 'rely': 0.0, 'relwidth': 0.33, 'relheight': 0.17 }
-        ]
-        top_frame = top_frames[len(self.channels) - 1]
+        if len(self.channels)==1:
+            top_frame = { 'relx': 0.0, 'rely': 0.0, 'relwidth': 1.0, 'relheight': 0.12 }
+        elif len(self.channels)==2:
+            top_frame = { 'relx': 0.0, 'rely': 0.0, 'relwidth': 1.0, 'relheight': 0.17 }
+        else:
+            top_frame = { 'relx': 0.0, 'rely': 0.0, 'relwidth': 1.0, 'relheight': 0.17 }
 
         # add plot to frame before labels for the z order
 
@@ -132,67 +130,82 @@ class Plot(Sensor.Sensor):
             with open(AppConfig.get_filename(self.get_gui_scheme_config_filename()), 'r') as f:
                 gui = json.loads(f.read())
         except Exception as e:
-            self.debug(__name__, 'failed to write GUI config: %s', e)
+            self.debug(__name__, 'failed to read GUI config: %s', e)
             gui = {}
 
-        gui['geometry'] = self._geometry_info
+        gui['geometry'] = dict(self.geometry)
 
-        padding_y = { 1: 100, 2: 70, 3: 70 }
-        pady = -1 / padding_y[len(self.channels)]
-        padx = -1 / 50
-        y = top_frame['relheight'] + pady
-        if 'plot_placement' in gui:
-            plot_placement = gui['plot_placement']
-        else:
-            plot_placement = {
-                'relwidth': 1.0-padx,
-                'relheight': 1-y-pady*2,
-                'rely': y,
-                'relx': padx
+        if not 'plot_placement' in gui:
+            gui['plot_placement'] = {
+                'relwidth': 1.0,
+                'relheight': 1.0,
+                'rely': 0,
+                'relx': 0,
+                'padx': -500,
+                'pady': -500
             }
-            gui['plot_placement'] = plot_placement
+
+        plot_placement = copy.deepcopy(gui['plot_placement'])
+        plot_placement['rely'] += top_frame['relheight'] + (1 / plot_placement['pady'])
+        plot_placement['relx'] += 1 / plot_placement['padx']
+        plot_placement['relwidth'] -= (2 / plot_placement['padx'])
+        plot_placement['relheight'] -= top_frame['relheight'] + (2 / plot_placement['pady'])
+        del plot_placement['padx']
+        del plot_placement['pady']
 
         self.canvas.get_tk_widget().place(in_=top, **plot_placement)
 
         # label placement for the enabled channels
-        if 'label_places' in gui:
-            places = gui['label_places'].copy()
-        else:
+        if not 'label_places' in gui:
             places = []
-            pad = 1 / 200
-            pad2 = pad * 2
+            padx = 200
+            pady = 200
             if len(self.channels)==1:
-                # 1 row 4 cols
-                w = 1 / 4
-                h = 1.0
-                for i in range(0, 4):
-                    x = i / 4
-                    places.append({'relx': x + pad, 'rely': pad, 'relwidth': w - pad2, 'relheight': h - pad2})
+                # 1x 1 row 4 cols
+                cols = 4
+                rows = 1
+                num = 4
             elif len(self.channels)==2:
-                # 2x 2 row 2 cols
-                w = 1 / 2
-                h = 1 / 2
-                for i in range(0, 8):
-                    x = (i % 2) / 2
-                    y = (int(i / 2) % 2) * h
-                    places.append({'relx': x + pad, 'rely': y + pad, 'relwidth': w - pad2, 'relheight': h - pad2})
+                # 2x 2 rows 2 cols
+                cols = 2
+                rows = 2
+                num = 8
             elif len(self.channels)==3:
-                # 3x 2 row 2 cols
-                w = 1 / 3
-                h = 1 / 2
-                for i in range(0, 12):
-                    x = (i % 2) / 3
-                    y = (int(i / 2) % 2) * h
-                    places.append({'relx': x + pad, 'rely': y + pad, 'relwidth': w - pad2, 'relheight': h - pad2})
-            gui['label_places'] = places.copy()
+                # 3x 2 rows 2 cols
+                cols = 2
+                rows = 2
+                num = 12
+
+            w = 1 / cols
+            h = 1 / rows
+            for i in range(0, num):
+                x = (i % cols) / cols
+                y = (int(i / rows) % rows) * h
+                places.append({'relx': x, 'rely': y, 'relwidth': w, 'relheight': h, 'padx': padx, 'pady': pady})
+            gui['label_places'] = places
+
+        places = copy.deepcopy(gui['label_places'])
+        for item in places:
+            item['relx'] += 1 / item['padx']
+            item['rely'] += 1 / item['pady']
+            item['relwidth'] += 2 / item['padx']
+            item['relheight'] += 2 / item['pady']
+            del item['padx']
+            del item['pady']
 
         for idx, channel in enumerate(self.channels):
             label_config['fg'] = channel.color
+            # label_config['bg'] = 'yellow'
+            label_config['bg'] = self.BG_COLOR
 
-            frame = tk.Frame(self._gui, bg=self.BG_COLOR)
+            # frame_bgcolor = 'red'
+            frame_bgcolor = self.BG_COLOR
+            frame = tk.Frame(self._gui, bg=frame_bgcolor)
             frame.pack()
-            frame.place(in_=top, **top_frame)
-            top_frame['relx'] += top_frame['relwidth']
+            tmp = copy.copy(top_frame)
+            tmp['relwidth'] /= len(self.channels)
+            tmp['relx'] += tmp['relwidth'] * idx
+            frame.place(in_=top, **tmp)
 
             label = tk.Label(self._gui, text="- V", **label_config)
             label.pack(in_=frame)
@@ -214,17 +227,34 @@ class Plot(Sensor.Sensor):
             label.place(in_=frame, **places.pop(0))
             self.labels[idx]['e'] = label
 
-        frame = tk.Frame(self._gui, bg='#999999')
-        frame.pack()
-        frame.place(in_=top, relx=0.5, rely=2.0, relwidth=0.8, relheight=0.25, anchor='center')
-        self.popup_frame = frame
-        label = tk.Label(self._gui, text="", font=('Verdana', 26), bg='#999999', fg='#ffffff', anchor='center')
+        if not 'info_popup' in gui:
+            gui['info_popup'] = {
+                'frame': {
+                    'relx': 0.15,
+                    'rely': 0.26,
+                    'relwidth': 0.7,
+                    'relheight': 0.6,
+                },
+                'label': {
+                    'bg': self.POPUP_BG_COLOR,
+                    'fg': self.POPUP_TEXT,
+                    'anchor': 'center',
+                },
+                'font': ('Verdana', 26)
+            }
+
+        info_popup = gui['info_popup']
+
+        self.popup_frame = tk.Frame(self._gui, bg=info_popup['label']['bg'])
+        self._popup_placement = info_popup['frame']
+
+        label = tk.Label(self._gui, text="", font=info_popup['font'], **info_popup['label'])
         label.pack(in_=self.popup_frame, fill=tkinter.BOTH, expand=True)
         self.popup_label = label
         self.popup_hide_timeout = None
 
         if AppConfig._debug:
-            label = tk.Label(self._gui, text="", font=('Verdana', 12), bg='#333333', fg=self.TEXT_COLOR, anchor='nw', wraplength=self._gui.winfo_width()) #self._geometry_info[0])
+            label = tk.Label(self._gui, text="", font=('Verdana', 12), bg='#333333', fg=self.TEXT_COLOR, anchor='nw', wraplength=self._gui.winfo_width())
             label.pack()
             label.place(in_=top, relx=0.0, rely=1.0-0.135 + 2.0, relwidth=1.0, relheight=0.13)
             self.debug_label = label
@@ -279,7 +309,7 @@ class Plot(Sensor.Sensor):
         else:
             data.ax.xaxis.set_major_locator(matplotlib.ticker.NullLocator())
             info = '%u seconds' % self.get_time_scale()
-        self._ax_data[0].legend = self._ax_data[0].ax.legend([info], handlelength=0, fontsize=self._fonts.plot_font.cget('size'), labelcolor=self.TEXT_COLOR, loc='lower center', frameon=False, borderpad=0.0, borderaxespad=0.2)
+        self._ax_data[0].legend = self._ax_data[0].ax.legend([info], handlelength=0, fontsize=AppConfig.plot.font_size, labelcolor=self.TEXT_COLOR, loc='lower center', frameon=False, borderpad=0.0, borderaxespad=0.2)
 
     def get_plot_geometry(self, plot_number, visibility=None):
         if visibility==None:
@@ -376,7 +406,7 @@ class Plot(Sensor.Sensor):
             return
         try:
             # update axis
-            yfont = {'fontsize': int(self._fonts.plot_font.cget('size') * 1.3)}
+            yfont = {'fontsize': AppConfig.plot.font_size * 1.3}
             self.y_limit_clear(0)
             if self._gui_config.plot_visibility!=PLOT_VISIBILITY.VOLTAGE:
                 if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
@@ -587,9 +617,6 @@ class Plot(Sensor.Sensor):
             # full update required
             if self._canvas_update_required:
                 self._canvas_update_required = False
-                self.info(__name__, 'canvas update')
-
-
                 # artists = []
                 # for data in self._ax_data:
                 #     if data.ax.get_visible():

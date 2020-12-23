@@ -56,15 +56,14 @@ class Idle(BaseApp.BaseApp):
         try:
             p = subprocess.run(self._cmd, timeout=30, capture_output=True)
             out = p.stdout.decode()
-            if p.returncode==0:
-                if re.search(AppConfig.idle_check_monitor_on, out, re.I|re.M):
-                    state = True
-                elif re.search(AppConfig.idle_check_monitor_off, out, re.I|re.M):
-                    state = False
-                else:
-                    self.error(__name__, 'idle command response invalid: returncode: %u: could not fiend monitor on/off pattern' % (p.returncode))
+            if re.search(AppConfig.idle_check_monitor_on, out, re.I|re.M):
+                state = True
+            elif re.search(AppConfig.idle_check_monitor_off, out, re.I|re.M):
+                state = False
+            else:
+                self.error(__name__, 'could not find monitor on/off pattern: returncode=%u cmd=%s' % (shlex.join(self._cmd), p.returncode))
         except Exception as e:
-            self.error(__name__, 'failed to execute command: %d: %s: %s' % (p.returncode, shlexy.join(self._cmd), e))
+            self.error(__name__, 'failed to execute command: returncode=%d cmd=%s error=%s' % (p.returncode, shlex.join(self._cmd), e))
 
         # self.debug(__name__, 'monitor enabled: %s', state)
         return state

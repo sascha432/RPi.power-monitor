@@ -22,6 +22,7 @@ class App(Base):
 
     idle_check_interval = TimeConverter.value(2, 's')
     idle_check_cmd = '/usr/bin/xset -display {DISPLAY} q'
+    # multi line regexp with ignore case
     idle_check_monitor_on = '^\s*monitor is on'
     idle_check_monitor_off = '^\s*monitor is off'
 
@@ -74,7 +75,10 @@ class Plot(Base):
     idle_refresh_interval = TimeConverter.value(30000, 'ms')
     max_values = 8192
     max_time = TimeConverter.value(900)
-    line_width = 1.0
+
+    line_width = 5.0
+    grid_line_width = 1.0
+    font_size = 19.0
 
     display_energy = Enums.DISPLAY_ENERGY.AH
     display_top_values_mean_time = TimeConverter.value(5)
@@ -104,7 +108,10 @@ class Gui(Base):
     title = 'Power Monitor'
     fullscreen = True
     display = '$DISPLAY'
-    geometry = "800x480x1.0"
+
+    # <width>x<width>[x<scaling=1.0>[x<dpi=72*scaling>]]
+    # dpi affects the plot only. negative values are not scaled
+    geometry = "800x480x1.0x72"
     color_scheme = Enums.COLOR_SCHEME.DEFAULT
 
     def __init__(self, struct={}):

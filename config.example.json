@@ -46,7 +46,7 @@
     ],
     "idle_check_cmd": "/usr/bin/xset -display {DISPLAY} q",
     "gui": {
-        // with x height x zoom
+        // with x height x scaling
         "geometry": "800x480x1.0",
         "color_scheme": "DARK",
         "fullscreen": true,
@@ -74,7 +74,7 @@
         "max_values": 8192,
         // "max_time": "30min",
         "max_time": 900,
-        "line_width": 1.0,
+        "line_width": 3.0,
         // +5% or 105%
         "current_top_margin": 5,
         // -12% or 88%
@@ -88,9 +88,9 @@
         }
     },
     "ina3221": {
-        "averaging_mode": "x16",
-        "vshunt_conversion_time": "time_8244_us",
-        "vbus_conversion_time": "time_8244_us"
+        "averaging_mode": "x64",
+        "vshunt_conversion_time": "time_1100_us",
+        "vbus_conversion_time": "time_1100_us"
     },
     "mqtt": {
         "host": "localhost",

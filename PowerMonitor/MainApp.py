@@ -262,6 +262,10 @@ class MainApp(MainAppCli):
             'FigureCanvasTkAgg': FigureCanvasTkAgg
         }
 
+    @property
+    def geometry(self):
+        return self._gui._geometry_info
+
     def __init_gui__(self):
 
         self.debug(__name__, 'starting with GUI')
@@ -281,25 +285,7 @@ class MainApp(MainAppCli):
         for data in self._ax_data:
             print(type(data.ax.get_children()))
             print(data.ax.get_children())
-
-    def window_resize(self):
-        pass
-        # if self._gui.fullscreen_state:
-        #     self._geometry_info = (800, 480, 1.0)#TODO get real size
-        # else:
-        #     tmp = AppConfig.gui.geometry.split('x')
-        #     self._geometry_info = (int(tmp[0]), int(tmp[1]), float(tmp[2]))
-
-        # self.debug_label.configure(wraplength=self._geometry_info[0])
-        # self._fonts.top_font.configure(size=int(self._fonts.top_font._org_size * self._geometry_info[2]))
-        # self._fonts.plot_font.configure(size=int(self._fonts.plot_font._org_size * self._geometry_info[2]))
-        # self._fonts.debug_font.configure(size=int(self._fonts.debug_font._org_size * self._geometry_info[2]))
-        # self._fonts.label_font.configure(size=int(self._fonts.label_font._org_size * self._geometry_info[2]))
-
-        # for data in self._ax_data:
-        #     data.ax.tick_params(labelsize=self._fonts.plot_font.cget('size'))
-        # self.add_ticks()
-
+        return "break"
 
     def destroy(self):
         if self.ani:
@@ -309,10 +295,8 @@ class MainApp(MainAppCli):
 
     def init_scheme(self):
 
-        tmp = AppConfig.gui.geometry.split('x')
-        self._geometry_info = (int(tmp[0]), int(tmp[1]), float(tmp[2]))
-        self._gui.geometry("%ux%u" % (self._geometry_info[0], self._geometry_info[1]))
-        self._gui.tk.call('tk', 'scaling', self._geometry_info[2])
+        tmp = AppConfig.gui.geometry.split('x', 3)
+        self._gui.geometry(*tmp)
 
         if AppConfig.gui.color_scheme == COLOR_SCHEME.DARK:
             self.CHANNELS = ['lime', 'deepskyblue', '#b4b0d1', '#0e830e', '#8681b5', '#268daf', 'red']
@@ -321,6 +305,8 @@ class MainApp(MainAppCli):
             self.PLOT_TEXT = self.TEXT_COLOR
             self.PLOT_GRID = 'gray'
             self.PLOT_BG = "#303030"
+            self.POPUP_TEXT = 'white'
+            self.POPUP_BG_COLOR = '#999999'
         elif AppConfig.gui.color_scheme == COLOR_SCHEME.LIGHT:
             self.CHANNELS = ['green', 'blue', 'aqua', 'green', 'blue', 'aqua', 'red']
             self.BG_COLOR = 'white'
@@ -328,6 +314,8 @@ class MainApp(MainAppCli):
             self.PLOT_TEXT = self.TEXT_COLOR
             self.PLOT_GRID = 'black'
             self.PLOT_BG = "#f0f0f0"
+            self.POPUP_TEXT = 'black'
+            self.POPUP_BG_COLOR = '#303030'
         else:
             raise ValueError('invalid color scheme')
 
@@ -339,22 +327,11 @@ class MainApp(MainAppCli):
             if AppConfig.channels[i].hline_color=='':
                 AppConfig.channels[i].hline_color = self.CHANNELS[i + 3]
 
-
-        self._fonts = namedtuple('GuiFonts', ['top_font', 'plot_font', 'debug_font', 'label_font'])
+        self._fonts = namedtuple('GuiFonts', ['top_font', 'debug_font', 'label_font'])
         self._fonts.top_font = font.Font(family='Helvetica', size=20)
-        self._fonts.plot_font = font.Font(family='Helvetica', size=8)
         self._fonts.debug_font = font.Font(family='Helvetica', size=10)
-        label_font_size = (32, 28, 18)
+        label_font_size = (32, 28, 24)
         self._fonts.label_font = font.Font(family='Helvetica', size=label_font_size[len(self.channels) - 1])
-
-        for name in self._fonts._fields:
-            tmp = getattr(self._fonts, name)
-            setattr(tmp, '_org_size', tmp.cget('size'))
-
-        self.TOP_FONT = "DejaVu Sans"
-        self.TOP_PADDING = (2, 20)
-        self.PLOT_DPI = 200
-        self.LABELS_PADX = 10
 
     def set_screen_update_rate(self, running=True):
         if (self._animation.mode!=Animation.Mode.RUNNING)==running:
@@ -363,8 +340,7 @@ class MainApp(MainAppCli):
     def get_gui_scheme_config_filename(self, auto=''):
         if auto==True:
             auto = '-auto'
-        return 'gui-%u-%ux%u%s.json' % (len(self.channels), self._geometry_info[0], self._geometry_info[1], auto)
-        # self._geometry_info[1], auto)
+        return 'gui-%u-%ux%ux%s%s.json' % (len(self.channels), self.geometry.width, self.geometry.height, self.geometry.scaling, auto)
 
     # ---------------------------------------------------------------------------------------------
     # gui config
@@ -465,10 +441,10 @@ class MainApp(MainAppCli):
 
     def button_1(self, event):
 
-        x = int(event.x / (self._geometry_info[0] / 8))
-        y = int(event.y / (self._geometry_info[1] / 4))
+        x = int(event.x / (self.geometry.width / 8))
+        y = int(event.y / (self.geometry.height / 4))
 
-        self.debug(__name__, 'button1 %u:%u %.2fx%.2f' % (x, y, self._geometry_info[0] / 8, self._geometry_info[1] / 4))
+        self.debug(__name__, 'button1 %u:%u %.2fx%.2f' % (x, y, self.geometry.width / 8, self.geometry.height / 4))
 
         if x<=1 and y==0:
             self.toggle_time_scale(-1)
@@ -501,8 +477,8 @@ class MainApp(MainAppCli):
         return "break"
 
     def debug_bind(self, event=None):
-        # x = int(event.x / (self._geometry_info[0] / 6))
-        # y = int(event.y / (self._geometry_info[1] / 3))
+        # x = int(event.x / (self.geometry.width / 6))
+        # y = int(event.y / (self.geometry.height / 3))
         # self.debug(__name__, '%d %d %s' % (x,y,str(event)))
         self.debug(__name__, event)
         return "break"
@@ -527,11 +503,14 @@ class MainApp(MainAppCli):
         return 'break'
 
     def show_popup(self, msg, timeout=3.5):
+        self.debug(__name__, 'show_popup: %s: %s', str(timeout), msg)
         if msg==None:
             self.popup_hide_timeout = None
-            self.popup_frame.place(rely=2.0)
+            self.popup_frame.pack_forget()
+            self.popup_frame.place(relx=0, rely=0, relwidth=0, relheight=0)
         else:
             self.popup_hide_timeout = time.monotonic() + timeout
             self.popup_label.configure(text=msg)
-            self.popup_frame.place(rely=0.28)
+            self.popup_frame.pack()
+            self.popup_frame.place(**self._popup_placement)
 
