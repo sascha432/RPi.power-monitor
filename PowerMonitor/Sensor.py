@@ -5,6 +5,7 @@
 from . import Mqtt
 from . import ChannelCalibration
 from . import Animation
+from . import Enums
 import SDL_Pi_INA3221
 import EventManager
 import time
@@ -12,6 +13,8 @@ import numpy as np
 import shutil
 import copy
 import json
+import copy
+import random
 
 INA3211_CONFIG = SDL_Pi_INA3221.INA3211_CONFIG
 
@@ -27,6 +30,7 @@ class Sensor(Mqtt.Mqtt):
         self._read_sensor_thread_state = {'quit': False}
         self._read_count = 0
         self._errors = 0
+        self._compress_data_timeout = 0
 
         if not self._init_ina3221_sensor():
             self._errors += 1
@@ -83,13 +87,15 @@ class Sensor(Mqtt.Mqtt):
         self.info(__name__, 'sensor read interval %.2fms' % (self.ina3221._channel_read_time * 1000))
         try:
             while not self._read_sensor_thread_state['quit']:
+
+                t = time.monotonic()
                 if self._errors==0:
-                    t = time.monotonic()
-                    self.data[0].append(t)
+                    # read data from sensor
+                    tmp = []
                     for channel in AppConfig.channels:
                         ch = int(channel)
-                        if channel in self.channels:
-                            busvoltage, shuntvoltage, current, loadvoltage, power = (0, 0, 0, 0, 0)
+                        if channel in self.channels: # channel enabled?
+                            tmp.append((0, 0, 0, 0))
                         else:
                             try:
                                 busvoltage = self.ina3221.getBusVoltage_V(ch)
@@ -98,66 +104,76 @@ class Sensor(Mqtt.Mqtt):
                                 loadvoltage = busvoltage - shuntvoltage
                                 current = current / 1000.0
                                 power = (current * busvoltage)
+                                self.add_stats('sensor', 1)
+                                tmp.append((loadvoltage, current, power, time.monotonic()))
                             except Exception as e:
+                                self.add_stats('senerr', 1)
                                 self.error(__name__, 'exception while reading INA3221 sensor: %s', str(e))
                                 self._errors += 1
-                                busvoltage, shuntvoltage, current, loadvoltage, power = (float("nan"), float("nan"), float("nan"), 0, 0)
+                                tmp = None
+                                break
 
-                        self.add_stats('sensor', 1)
 
+                    if self._errors==0 and len(tmp):
+                        # lock'n'copy
+
+                        store_energy_data = None
+                        diff_limit = self.ina3221._channel_read_time * len(self.channels) * 3
                         self._data_lock.acquire()
                         try:
-                            self.averages[0][ch] += 1
-                            self.averages[1][ch] += loadvoltage
-                            self.averages[2][ch] += current
-                            self.averages[3][ch] += power
+                            self.data[0].append(t)
 
-                            self.add_stats_minmax('ch%u_U' % ch, loadvoltage)
-                            self.add_stats_minmax('ch%u_I' % ch, current)
-                            self.add_stats_minmax('ch%u_P' % ch, power)
+                            for index, (loadvoltage, current, power, ts) in enumerate(tmp):
+                                #(loadvoltage, current, power, ts) = data
 
-                            if True:
-                                if self.energy[ch]['t']==0:
-                                    self.energy[ch]['t'] = t
+                                self.averages[0][index] += 1
+                                self.averages[1][index] += loadvoltage
+                                self.averages[2][index] += current
+                                self.averages[3][index] += power
+
+                                self.add_stats_minmax('ch%u_U' % index, loadvoltage)
+                                self.add_stats_minmax('ch%u_I' % index, current)
+                                self.add_stats_minmax('ch%u_P' % index, power)
+
+                                if self.energy[index]['t']==0 or ts==0:
+                                    self.energy[index]['t'] = ts
                                 else:
-                                    diff = t - self.energy[ch]['t']
-                                    # do not add if there is a gap
-                                    if diff<1.0:
-                                        self.energy[ch]['ei'] += (diff * current / 3600)
-                                        self.energy[ch]['ep'] += (diff * power / 3600)
+                                    diff = ts - self.energy[index]['t']
+                                    # do not add if there is a gap that is over 3x times the expected read time
+                                    if diff < diff_limit:
+                                        self.energy[index]['ei'] += (diff * current / 3600)
+                                        self.energy[index]['ep'] += (diff * power / 3600)
                                     else:
-                                        if diff>10.0:
-                                            self.error(__name__, 'delay reading sensor data: channel %u: %.2fsec', ch, diff)
-                                    self.energy[ch]['t'] = t
+                                        if diff>diff_limit * 10:
+                                            self.error(__name__, 'sensor read timeout for channel number %u: %.3fsec channels: %u read time: %.3fms', (index + 1), diff, len(self.channels), self.ina3221._channel_read_time / 1000000)
+                                    self.energy[index]['t'] = ts
 
-                                # self.data[ch].append((current, loadvoltage, power))
-                                self.data[1][ch][0].append(loadvoltage)
-                                self.data[1][ch][1].append(current)
-                                self.data[1][ch][2].append(power)
+                                self.data[1][index][0].append(loadvoltage)
+                                self.data[1][index][1].append(current)
+                                self.data[1][index][2].append(power)
 
-                                # self.data[ch].append({'t': t, 'I': current, 'U': loadvoltage, 'P': power })
-
-                                if t>self.energy['stored'] + AppConfig.store_energy_interval:
+                                if t>self.energy['stored'] + min(30, AppConfig.store_energy_interval): # limited to >=30 seconds
                                     self.energy['stored'] = t;
-                                    self.store_energy()
+                                    self._scheduler.enter(1.0, Enums.SCHEDULER_PRIO.STORE_ENERGY, self.store_energy)
 
                         finally:
                             self._data_lock.release()
 
-                    # self.debug(__name__, 'sensor items %u', len(self.data[0]))
+                        if self._gui and self._animation.mode==Animation.Mode.NONE:
+                            self.debug(__name__, 'starting animation from sensor')
+                            self._animation.schedule()
 
-                        diff = time.monotonic() - t
-                        diff = diff>0 and (self.ina3221._channel_read_time - diff) or 0
-                        self._read_count += 1
-                        self._read_sensor_thread_listener.sleep(diff, self.read_sensor_thread_handler)
 
-                    if self._gui and self._animation.mode==Animation.Mode.NONE:
-                        self.debug(__name__, 'starting animation from sensor')
-                        self._animation.schedule()
+                        # self.debug(__name__, 'sensor items %u', len(self.data[0]))
+
+                diff = time.monotonic() - t
+                diff = diff>=0 and (self.ina3221._channel_read_time - diff) or 0
+                self._read_count += 1
+                self._read_sensor_thread_listener.sleep(diff, self.read_sensor_thread_handler)
 
                 # if any error occurs, let it finish reading all channels and try to reinitilize here
                 if self._errors>0:
-                    self.energy[ch]['t'] = 0
+                    self.energy[index]['t'] = 0
                     while True:
                         self.info(__name__, 'waiting 30 seconds before trying to reintialize the sensor: errors=%u', self._errors)
                         self._read_sensor_thread_listener.sleep(30.0, self.read_sensor_thread_handler)
@@ -170,7 +186,7 @@ class Sensor(Mqtt.Mqtt):
                         self._errors += 1
 
         except Exception as e:
-            self.error(_name_, str(e))
+            self.error(__name__, str(e))
             AppConfig._debug_exception(e)
 
         self.thread_register(__name__)
@@ -178,8 +194,9 @@ class Sensor(Mqtt.Mqtt):
 
     def load_energy(self):
         files = [AppConfig.get_filename(AppConfig.energy_storage_file)]
-        for i in range(0, 3):
-            files.append('%s.%u.bak' % (files[0], i))
+        if AppConfig.energy_storage_num_backups>0:
+            for i in range(0, AppConfig.energy_storage_num_backups):
+                files.append('%s.%u.bak' % (files[0], i))
         try:
             e = None
             for file in files:
@@ -187,16 +204,22 @@ class Sensor(Mqtt.Mqtt):
                     with open(AppConfig.get_filename(AppConfig.energy_storage_file), 'r') as f:
                         tmp = json.loads(f.read())
                         self.reset_energy()
-                        for channel in self.channels:
-                            ch = int(channel)
+                        energy = {}
+                        for index, channel in enumerate(AppConfig.channels):
+                            data = {'ei': 0, 'ep': 0, 't': 0}
+                            energy[index] = data
                             try:
-                                t = tmp[str(ch)]
+                                t = tmp[str(index)]
                             except:
-                                t = tmp[ch]
-                            self.energy[ch]['t'] = 0
-                            self.energy[ch]['ei'] = float(t['ei'])
-                            self.energy[ch]['ep'] = float(t['ep'])
+                                t = tmp[index]
+                            data['ei'] = float(t['ei'])
+                            data['ep'] = float(t['ep'])
                             e = None
+                        self._data_lock.acquire()
+                        try:
+                            self.energy.update(energy)
+                        finally:
+                            self._data_lock.release()
                 except Exception as e:
                     pass
             if e!=None:
@@ -207,28 +230,49 @@ class Sensor(Mqtt.Mqtt):
 
     def store_energy(self):
         file = AppConfig.get_filename(AppConfig.energy_storage_file)
-        tmp = copy.deepcopy(self.energy)
-        for channel in self.channels:
-            ch = int(channel)
-            del tmp[ch]['t']
+        self._data_lock.acquire()
+        try:
+            tmp = copy.deepcopy(self.energy)
+        finally:
+            self._data_lock.release()
+        for key, val in tmp.items():
+            if isinstance(val, dict) and 't' in val:
+                del val['t']
         try:
             with open(file, 'w') as f:
                 f.write(json.dumps(tmp))
-            shutil.copyfile(file, '%s.%u.bak' % (file, self._energy_backp_file_num))
-            self._energy_backp_file_num += 1
-            self._energy_backp_file_num %= 3
+
+            if AppConfig.energy_storage_num_backups>0:
+                shutil.copyfile(file, '%s.%u.bak' % (file, self._energy_backp_file_num))
+                self._energy_backp_file_num += 1
+                self._energy_backp_file_num %= AppConfig.energy_storage_num_backups
         except Exception as e:
             self.error(__name__, 'failed to store energy: %s: %s', file, e)
 
     def reset_avg(self):
         self.averages = np.zeros((4, 3))
 
+    def _get_array_len(self):
+        minl = len(self.values._t)
+        maxl = minl
+        for index, channel in enumerate(self.channels):
+            minl = min(minl, len(self.values[index].U), len(self.values[index].I), len(self.values[index].P))
+            maxl = max(maxl, len(self.values[index].U), len(self.values[index].I), len(self.values[index].P))
+        return (minl, maxl)
+
+    def _validate_array_len(self, test_id):
+        minl, maxl = self._get_array_len()
+        if minl==maxl:
+            return
+        self.error(__name__, 'array length mismatch: id=%s min=%u max=%u', test_id, minl, maxl)
+
     def aggregate_sensor_values(self):
         try:
+            t = time.monotonic()
             tmp = []
             self._data_lock.acquire()
             try:
-                tmp = self.data
+                tmp = copy.deepcopy(self.data)
                 self.reset_data()
             finally:
                 self._data_lock.release()
@@ -242,11 +286,49 @@ class Sensor(Mqtt.Mqtt):
             for channel in self.channels:
                 ch = int(channel)
                 tmp2 = tmp[1][ch]
-                self.values[channel].voltage().extend(tmp2[0])
-                self.values[channel].current().extend(tmp2[1])
-                self.values[channel].power().extend(tmp2[2])
+                self.values[channel].U.extend(tmp2[0])
+                self.values[channel].I.extend(tmp2[1])
+                self.values[channel].P.extend(tmp2[2])
 
-            self.compress_values()
+            if t>=self._compress_data_timeout:
+                self._compress_data_timeout = t + 5
+                self._scheduler.enter(1.0, Enums.SCHEDULER_PRIO.COMPRESS_DATA, self.compress_values)
+
+            minl, maxl = self._get_array_len()
+            if minl!=maxl:
+                if min_len==0:
+                    return
+
+                tmp = {'t': len(self.values._t)}
+                self.values._t = self.values._t[0:minl]
+                for index, channel in enumerate(self.channels):
+                    tmp[index] = {
+                        'U': len(self.values[index].U),
+                        'I': len(self.values[index].I),
+                        'P': len(self.values[index].P),
+                    }
+                    self.values[index].U = self.values[index].U[0:minl]
+                    self.values[index].I = self.values[index].I[0:minl]
+                    self.values[index].P = self.values[index].P[0:minl]
+
+            # t2 = time.monotonic()
+
+            # print('%d %d %d time=%.3f' % (len(tmp), minl, maxl, (t2 - t) * 1000))
+
+                # np.array()
+
+                # n = len(self.values._t)
+                # for index, channel in enumerate(self.channels):
+                #     n = min(n, len(self.values[index].U), len(self.values[index].I), len(self.values[index].P))
+
+                # self._ax_data[0].datax = np.array(self.values._t)
+
+
+
+
+
+
+            return True
         except Exception as e:
             AppConfig._debug_exception(e)
 
@@ -277,8 +359,16 @@ class Sensor(Mqtt.Mqtt):
                 idx = self.values.find_time_index(AppConfig.plot.max_time)
                 # self.debug(__name__, 'discard 0:%u' % (idx + 1))
                 # discard from all lists
-                for type, ch, items in self.values.all():
-                    self.values.set_items(type, ch, items[idx + 1:])
+                self._plot_lock.acquire()
+                self._data_lock.acquire()
+                try:
+
+                    for type, ch, items in self.values.all():
+                        self.values.set_items(type, ch, items[idx + 1:])
+                finally:
+                    self._data_lock.release()
+                    self._plot_lock.release()
+
 
             # compress data if min records have been added
             if self.compressed_min_records<AppConfig.plot.compression.min_records:
@@ -314,22 +404,31 @@ class Sensor(Mqtt.Mqtt):
 
                 before = len(self.values._t)
 
-                # split array into 3 array and one of them into groups and generate mean values for each group concatenation the flattened result
-                for type, ch, items in self.values.all():
+                self._plot_lock.acquire()
+                self._data_lock.acquire()
+                try:
 
-                    self.add_stats('ud', len(items))
+                    # split array into 3 array and one of them into groups and generate mean values for each group concatenation the flattened result
+                    for type, ch, items in self.values.all():
 
-                    items = np.array_split(items[:], [start_idx, end_idx])
-                    items[1] = np.array(items[1])
-                    # from scipy import signal
-                    # n = group_size // 2 ** 2
-                    # signal.resample(items[1].tolist, 6000)
-                    items[1] = self.min_max_downsample(items[1], items[1], group_size, type=='t')
-                    items[1] = np.array(items[1]).reshape(-1, group_size).mean(axis=0)
-                    tmp = np.concatenate(np.array(items, dtype=object).flatten()).tolist()
-                    self.values.set_items(type, ch, tmp)
+                        self.add_stats('ud', len(items))
 
-                    self.add_stats('cd', len(tmp))
+                        items = np.array_split(items[:], [start_idx, end_idx])
+                        items[1] = np.array(items[1])
+                        # from scipy import signal
+                        # n = group_size // 2 ** 2
+                        # signal.resample(items[1].tolist, 6000)
+                        items[1] = self.min_max_downsample(items[1], items[1], group_size, type=='t')
+                        items[1] = np.array(items[1]).reshape(-1, group_size).mean(axis=0)
+                        # tmp = np.array(items).ravel().tolist()
+                        tmp = np.concatenate(np.array(items, dtype=object).flatten()).tolist()
+                        self.values.set_items(type, ch, tmp)
+
+                        self.add_stats('cd', len(tmp))
+
+                finally:
+                    self._data_lock.release()
+                    self._plot_lock.release()
 
                 diff = time.monotonic() - t
 

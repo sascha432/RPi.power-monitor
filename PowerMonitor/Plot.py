@@ -4,12 +4,18 @@
 
 import sys
 import time
-import matplotlib.ticker as ticker
+import matplotlib
 import numpy as np
 import EventManager
+import copy
 import json
 from collections import namedtuple
 from . import FormatFloat, Sensor, Tools, PLOT_VISIBILITY, PLOT_PRIMARY_DISPLAY, SCHEDULER_PRIO, DISPLAY_ENERGY
+
+class NamedTuples:
+    PlotData = namedtuple('PlotData', ['time', 'P', 'channels'])
+    PlotChannel = namedtuple('PlotChannel', ['U', 'I', 'P'])
+    PlotMargin = namedtuple('PlotMargin', ('top', 'bottom'))
 
 class Plot(Sensor.Sensor):
 
@@ -66,14 +72,14 @@ class Plot(Sensor.Sensor):
 
         # axis 0
         ax = self.fig.add_subplot(self.get_plot_geometry(0, PLOT_VISIBILITY.BOTH), facecolor=self.PLOT_BG)
-        self._ax_data.append(namedtuple('AxisData%u' % len(self._ax_data), ('ax', 'background', 'lines', 'legend')))
+        self._ax_data.append(namedtuple('AxisData%u' % len(self._ax_data), ('ax', 'background', 'lines', 'legend', 'datax', 'datay')))
         self._ax_data[-1].ax = ax
         self._ax_data[-1].lines = []
 
         # axis 1-3
         for channel in self.channels:
-            ax = self.fig.add_subplot(self.get_plot_geometry(channel.number, PLOT_VISIBILITY.BOTH), facecolor=self.PLOT_BG)
-            self._ax_data.append(namedtuple('AxisData%u' % len(self._ax_data), ('ax', 'background', 'lines')))
+            ax = self.fig.add_subplot(self.get_plot_geometry(channel.number, PLOT_VISIBILITY.BOTH), facecolor=self.PLOT_BG, sharex=self._ax_data[0].ax)
+            self._ax_data.append(namedtuple('AxisData%u' % len(self._ax_data), ('ax', 'background', 'lines', 'datay', 'hline')))
             self._ax_data[-1].ax = ax
             self._ax_data[-1].lines = []
 
@@ -81,16 +87,16 @@ class Plot(Sensor.Sensor):
 
         for data in self._ax_data:
             data.ax.grid(True, color=self.PLOT_GRID, axis='both')
-            data.ax.set_xticks([])
-            data.ax.set_xticklabels([])
+            # data.ax.set_xticks([])
+            # data.ax.set_xticklabels([])
             data.ax.tick_params(**self.ticks_params())
-            data.ax.ticklabel_format(axis='y', style='plain', useOffset=False)
-            ax.autoscale(axis='x', tight=True)
-            ax.margins(0.01, 0.01)
+            # data.ax.ticklabel_format(axis='y', style='plain', useOffset=False)
+            ax.autoscale(False)
+            ax.margins(0, 0)
 
         # # add before reconfigure_axis
         # idx = 1
-        # for channel in self.channels.items():
+        # for channel in enumerate(self.channels):
         #     self._ax_data[idx].ax.ticklabel_format(axis='y', style='plain', useOffset=False)
         #     idx += 1
 
@@ -180,7 +186,7 @@ class Plot(Sensor.Sensor):
                     places.append({'relx': x + pad, 'rely': y + pad, 'relwidth': w - pad2, 'relheight': h - pad2})
             gui['label_places'] = places.copy()
 
-        for idx, channel in self.channels.items():
+        for idx, channel in enumerate(self.channels):
             label_config['fg'] = channel.color
 
             frame = tk.Frame(self._gui, bg=self.BG_COLOR)
@@ -230,12 +236,13 @@ class Plot(Sensor.Sensor):
             self.debug(__name__, 'failed to write GUI config: %s', e)
 
         self.canvas.get_tk_widget().bind('<Button-1>', self.button_1)
+        self.canvas.draw()
 
 
     def update_y_ticks_primary(self, y, pos):
-        if len(self._y_limits) and self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
-            yl = self._y_limits[0]
-            diff = yl[0] - yl[1]
+        if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
+            ymin, ymax = self._ax_data[0].ax.get_ylim()
+            diff = ymax - ymin
             if diff<1.0:
                 return '%d' % (int(y * 1000))
         return '%.2f' % y
@@ -244,19 +251,35 @@ class Plot(Sensor.Sensor):
         return '%.2f' % y
 
     def add_ticks(self):
-        self._ax_data[0].ax.yaxis.set_major_locator(ticker.MaxNLocator(6))
-        self._ax_data[0].ax.yaxis.set_major_formatter(ticker.FuncFormatter(self.update_y_ticks_primary))
+        self._ax_data[0].ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(6, steps=[1,2,5,10]))
+        self._ax_data[0].ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(self.update_y_ticks_primary))
 
         n = len(self.channels) > 1 and 3 or 6
-        for idx, channel in self.channels.items():
-            self._ax_data[idx + 1].ax.yaxis.set_major_locator(ticker.MaxNLocator(n))
-            self._ax_data[idx + 1].ax.yaxis.set_major_formatter(ticker.FuncFormatter(self.update_y_ticks_secondary))
+        for idx, channel in enumerate(self.channels):
+            self._ax_data[idx + 1].ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(n))
+            self._ax_data[idx + 1].ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(self.update_y_ticks_secondary))
 
+        steps = (5, 10, 15, 30, 60, 120, 300, 900, 1800, 3600)
+        step_size = None
+        max_steps = 5
+        if self._gui_config.plot_visibility==PLOT_VISIBILITY.PRIMARY:
+            max_steps = 8
         for data in self._ax_data:
+            for step in steps:
+                n = self.get_time_scale() // step
+                if n>=1 and n<=max_steps:
+                    data.ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(n))
+                    step_size = step
+                    break
+            data.ax.xaxis.set_major_formatter(matplotlib.ticker.NullFormatter())
             data.ax.tick_params(**self.ticks_params())
 
-    def legend(self):
-        self._ax_data[0].legend = self._ax_data[0].ax.legend(['%u seconds' % self.get_time_scale()], handlelength=0, fontsize=self._fonts.plot_font.cget('size'), labelcolor=self.TEXT_COLOR, loc='lower center', frameon=False, borderpad=0.0, borderaxespad=0.2)
+        if step_size:
+            info = '%s / %u seconds' % (self.get_time_scale(), step_size)
+        else:
+            data.ax.xaxis.set_major_locator(matplotlib.ticker.NullLocator())
+            info = '%u seconds' % self.get_time_scale()
+        self._ax_data[0].legend = self._ax_data[0].ax.legend([info], handlelength=0, fontsize=self._fonts.plot_font.cget('size'), labelcolor=self.TEXT_COLOR, loc='lower center', frameon=False, borderpad=0.0, borderaxespad=0.2)
 
     def get_plot_geometry(self, plot_number, visibility=None):
         if visibility==None:
@@ -317,44 +340,22 @@ class Plot(Sensor.Sensor):
     def get_plot_fps(self):
         return 1.0 / max(0.001, len(self.plot_updated_times)>2 and np.average(self.plot_updated_times[1:]) or 10000000)
 
-    def get_plot_values(self, axis, channel):
-        # shared axis 0
+    def get_plot_data(self, axis, channel):
         if axis==0:
-            if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
-                return (self.values[channel], self.values[channel].current())
-            elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.POWER:
-                return (self.values[channel], self.values[channel].power())
-            elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.AGGREGATED_POWER:
-                return (self.values[0], self.power_sum)
-        # axis 1-3
-        elif axis in(1, 2, 3):
-            return (self.values[channel], self.values[channel].voltage())
-
-        raise RuntimeError('axis %u channel %u plot_primary_display %u' % (axis, channel, self._gui_config.plot_primary_display))
-
-    def get_plot_line(self, axis, channel=None):
-        try:
-            # axis 0 - current(#channels), power(#channels) or aggregated power(1)
-            if axis==0:
-                if self._gui_config.plot_visibility==PLOT_VISIBILITY.VOLTAGE:
-                    return None
-                elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.AGGREGATED_POWER:
-                    # single line for all channels
+            if self._gui_config.plot_visibility!=PLOT_VISIBILITY.VOLTAGE:
+                if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.AGGREGATED_POWER:
                     if channel!=0:
-                        return None
-                    return self._ax_data[0].lines[0]
-                elif self._gui_config.plot_primary_display in(PLOT_PRIMARY_DISPLAY.CURRENT, PLOT_PRIMARY_DISPLAY.POWER):
-                    # one line per channel
-                    return self._ax_data[0].lines[channel]
+                        return (None, None, None)
+                    return (self._ax_data[0].lines[0], self._data.P, self._ax_data[0].ax)
+                if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
+                    return (self._ax_data[0].lines[channel], self._data.channels[channel].I, self._ax_data[0].ax)
+                if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.POWER:
+                    return (self._ax_data[0].lines[channel], self._data.channels[channel].P, self._ax_data[0].ax)
 
-            # axis 1-3 - single line, voltage
-            elif axis in(1, 2, 3) and self._gui_config.plot_visibility!=PLOT_VISIBILITY.PRIMARY:
+        elif axis in (1, 2, 3) and self._gui_config.plot_visibility!=PLOT_VISIBILITY.PRIMARY:
+            return (self._ax_data[axis].lines[0], self._data.channels[channel].U, self._ax_data[axis].ax)
 
-                return self._ax_data[axis].lines[0]
-
-        except Exception as e:
-            raise KeyError('axis: %s channel: %s exception: %s: %s %s' % (axis, channel, e, self._ax_data, self._ax_data[axis]))
-        return None
+        return (None, None, None)
 
     def set_plot_geometry(self):
         idx = 0
@@ -376,23 +377,16 @@ class Plot(Sensor.Sensor):
         try:
             # update axis
             yfont = {'fontsize': int(self._fonts.plot_font.cget('size') * 1.3)}
-            self.power_sum = []
-            self.clear_y_limits(0)
+            self.y_limit_clear(0)
             if self._gui_config.plot_visibility!=PLOT_VISIBILITY.VOLTAGE:
                 if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
-                    values_type = 'I'
-                    values, items = self.get_plot_values(0, 0)
-                    self._main_plot_limits = (AppConfig.plot.current_top_margin, AppConfig.plot.current_bottom_margin, AppConfig.plot.current_rounding)
+                    self._plot_margin = NamedTuples.PlotMargin(top=AppConfig.plot.current_top_margin, bottom=AppConfig.plot.current_bottom_margin)
                     self._ax_data[0].ax.set_ylabel('Current (A)', color=self.PLOT_TEXT, **yfont)
                 elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.POWER:
-                    values_type = 'P'
-                    values, items = self.get_plot_values(0, 1)
-                    self._main_plot_limits = (AppConfig.plot.power_top_margin, AppConfig.plot.power_bottom_margin, AppConfig.plot.power_rounding)
+                    self._plot_margin = NamedTuples.PlotMargin(top=AppConfig.plot.power_top_margin, bottom=AppConfig.plot.power_bottom_margin)
                     self._ax_data[0].ax.set_ylabel('Power (W)', color=self.PLOT_TEXT, **yfont)
                 elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.AGGREGATED_POWER:
-                    values_type = 'Psum'
-                    values, items = self.get_plot_values(0, 2)
-                    self._main_plot_limits = (AppConfig.plot.power_top_margin, AppConfig.plot.power_bottom_margin, AppConfig.plot.power_rounding)
+                    self._plot_margin = NamedTuples.PlotMargin(top=AppConfig.plot.power_top_margin, bottom=AppConfig.plot.power_bottom_margin)
                     self._ax_data[0].ax.set_ylabel('Aggregated Power (W)', color=self.PLOT_TEXT, **yfont)
                 else:
                     raise RuntimeError('reconfigure_axis: plot_primary_display %s' % (self._gui_config.plot_primary_display))
@@ -405,199 +399,181 @@ class Plot(Sensor.Sensor):
                 self._ax_data[idx].lines = []
                 idx += 1
 
+            values = []
 
             # primary plot current or for power for all channels
             data = self._ax_data[0]
             if self._gui_config.plot_visibility in(PLOT_VISIBILITY.PRIMARY, PLOT_VISIBILITY.BOTH):
                 if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.AGGREGATED_POWER:
-                    line, = data.ax.plot(self.values.time(), self.values.time(), color=self.channels[0]._color_for('Psum'), label='Aggregated Power (W)', linewidth=AppConfig.plot.line_width)
+                    line, = data.ax.plot(values, values, color=self.channels[0]._color_for('Psum'), label='Aggregated Power (W)', linewidth=AppConfig.plot.line_width)
                     data.lines.append(line)
                 else:
-                    for idx, channel in self.channels.items():
+                    for idx, channel in enumerate(self.channels):
                         if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
-                            line, = data.ax.plot(self.values.time(), self.values[idx].current(), color=channel._color_for('I'), label=channel.name + ' I', linewidth=AppConfig.plot.line_width)
+                            line, = data.ax.plot(values, values, color=channel._color_for('I'), label=channel.name + ' I', linewidth=AppConfig.plot.line_width)
                             data.lines.append(line)
                         elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.POWER:
-                            line, = data.ax.plot(self.values.time(), self.values[idx].power(), color=channel._color_for('P'), label=channel.name + ' P', linewidth=AppConfig.plot.line_width)
+                            line, = data.ax.plot(values, values, color=channel._color_for('P'), label=channel.name + ' P', linewidth=AppConfig.plot.line_width)
                             data.lines.append(line)
 
             # secondary plots, voltage per axis
             if self._gui_config.plot_visibility in(PLOT_VISIBILITY.VOLTAGE, PLOT_VISIBILITY.BOTH):
-                for idx, channel in self.channels.items():
-                    line, = self._ax_data[idx + 1].ax.plot(self.values.time(), self.values[idx].voltage(), color=channel._color_for('U'), label=channel.name + ' U', linewidth=2)
+                for idx, channel in enumerate(self.channels):
+                    self._ax_data[idx + 1].hline = self._ax_data[idx + 1].ax.axhline(channel.voltage, color=channel._color_for('hline'), linewidth=AppConfig.plot.line_width, ls='dotted')
+                    line, = self._ax_data[idx + 1].ax.plot(values, values, color=channel._color_for('U'), label=channel.name + ' U', linewidth=AppConfig.plot.line_width)
                     self._ax_data[idx + 1].lines = [line]
 
-            self.legend()
             self.add_ticks()
 
             # for data in self._ax_data:
             #     for child in data.ax.get_children():
             #         print(type(child), child)
-            print(len(self._ax_data))
-            i1 = 0
-            for data in self._ax_data:
-                i2 = 0
-                print(i1, data, len(data.ax.lines))
-                for line in data.ax.lines:
-                    print(i1, i2, data, line)
-                    i2 += 1
-                i1 += 1
+            # print(len(self._ax_data))
+            # i1 = 0
+            # for data in self._ax_data:
+            #     i2 = 0
+            #     print(i1, data, len(data.ax.lines))
+            #     for line in data.ax.lines:
+            #         print(i1, i2, data, line)
+            #         i2 += 1
+            #     i1 += 1
 
         finally:
             self._plot_lock.release()
 
+    def plot_get_all_artists(self):
+        artists = []
+        for data in self._ax_data:
+            if data.ax.get_visible():
+                artists.extend(data.lines)
+                for child in data.ax.get_children():
+                    if isinstance(child, (matplotlib.legend.Legend, matplotlib.text.Text)):
+                        artists.append(child)
+        return artists
+
+
     def plot_values(self, i):
         artists = []
-        if not self._plot_lock.acquire(True, 0.1): # do not block the tk main thread
+        if not self._plot_lock.acquire(True, 0.2): # do not block the tk main thread
             self.error(__name__, 'plot_values could not acquire lock')
-            return []
+            return self.plot_get_all_artists()
         try:
-            self.aggregate_sensor_values()
-
-            n = len(self.values._t)
-            for index, channel in self.channels.items():
-                n = min(n, len(self.values[index].U), len(self.values[index].I), len(self.values[index].P))
-            if n!=len(self.values._t):
-                tmp = {'t': len(self.values._t)}
-                self.values._t = self.values._t[0:n]
-                for index, channel in self.channels.items():
-                    tmp[index] = {
-                        'U': len(self.values[index].U),
-                        'I': len(self.values[index].I),
-                        'P': len(self.values[index].P),
-                    }
-                    self.values[index].U = self.values[index].U[0:n]
-                    self.values[index].I = self.values[index].I[0:n]
-                    self.values[index].P = self.values[index].P[0:n]
-                self.error(__name__, "data mismatch %u %u %s" % (n, len(self.values._t), tmp))
-
-            if n==0:
-                return []
-
+            if not self.aggregate_sensor_values():
+                return self.plot_get_all_artists()
 
             fmt = FormatFloat.FormatFloat(4, 5, prefix=FormatFloat.PREFIX.M, strip=FormatFloat.STRIP.NONE)
             fmt.set_precision('m', 1)
 
-            self.plot_count_fps()
+            # ---------------------------------------------------------------------------------------
+            if not self._data_lock.acquire(True, 0.2):
+                return self.plot_get_all_artists()
+            try:
+                if AppConfig._debug:
+                    self._validate_array_len('plot')
 
-            ts = time.monotonic()
-            display_idx = 0
-            x_range = self.values.time()
-            x_max = None
-            x_min = -self.get_time_scale()
-            y_max = 0
-            y_min = sys.maxsize
+                self.plot_count_fps()
+
+                ts = time.monotonic()
+                y_max0 = 0
+                y_min0 = sys.maxsize
+
+                x_max = self.values.max_time()
+                x_min = x_max - self.get_time_scale()
+
+                dtime = np.array(self.values._t)
+                display_idx = np.searchsorted(dtime, x_min)
+
+                aggregatedP = None
+                channels = []
+                tmp = []
+                for values in self.values.values():
+                    U = np.array(values.U[display_idx:])
+                    I = np.array(values.I[display_idx:])
+                    P = np.array(values.P[display_idx:])
+                    tmp.append(P)
+                    channels.append(NamedTuples.PlotChannel(U=U, I=I, P=P))
+
+                if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.AGGREGATED_POWER:
+                    aggregatedP = np.array(tmp).sum(axis=0)
+
+                # move last to 0 that the grid does not move and the reverse order is preserved
+                time_idx = np.subtract(self.values._t[display_idx:], self.values._t[-1])
+                x_min = -self.get_time_scale()
+                x_max = 0
+
+                self._data = NamedTuples.PlotData(time=time_idx, P=aggregatedP, channels=channels)
+                data = self._data
+
+            finally:
+                self._data_lock.release()
+
 
             # ---------------------------------------------------------------------------------------
-
-            if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.AGGREGATED_POWER:
-                tmp = []
-                for channel in self.channels:
-                    ch = int(channel)
-                    tmp.append(self.values[ch].power())
-                self.power_sum = np.array(tmp).sum(axis=0)
-
-            for idx, channel in self.channels.items():
+            for idx, channel in enumerate(self.channels):
 
                 # axis 0
-                line = self.get_plot_line(0, idx)
+                line, values, ax = self.get_plot_data(0, idx)
                 if line!=None:
-                    values, items = self.get_plot_values(0, idx)
-                    if x_max==None:
-                        x_max = self.values.max_time()
-                        x_min = x_max - self.get_time_scale()
-                        display_idx = self.values.find_time_index(x_min, True)
 
-                    # get limits for all lines and add them after the for loop
-                    y_max = max(y_max, max(items[display_idx:]))
-                    y_min = min(y_min, min(items[display_idx:]))
+                    y_max0 = max(y_max0, np.amax(values))
+                    y_min0 = min(y_min0, np.amin(values))
 
-                    # data
-                    line.set_data(x_range, items)
+                    line.set_data(data.time, values)
                     artists.append(line)
 
                 # axis 1-3
-                axis = idx + 1
-                line = self.get_plot_line(axis)
+                line, values, ax = self.get_plot_data(idx + 1, idx)
                 if line!=None:
-                    values, items = self.get_plot_values(axis, idx)
-                    # data
-                    line.set_data(x_range, items)
+
+                    line.set_data(data.time, values)
                     artists.append(line)
 
+                    artists.append(self._ax_data[idx + 1].hline)
+
+                    max_val = np.amax(values)
+                    min_val = np.amin(values)
+
                     # limits per channel
-                    ax = self._ax_data[axis].ax
-                    y_max1 = max(channel.voltage + 0.02, round(values.max_U(display_idx) * AppConfig.plot.voltage_top_margin / AppConfig.plot.voltage_rounding) * AppConfig.plot.voltage_rounding)
-                    y_min1 = min(channel.voltage - 0.02, round((values.min_U(display_idx) * AppConfig.plot.voltage_bottom_margin + AppConfig.plot.voltage_rounding * 0.51) / AppConfig.plot.voltage_rounding) * AppConfig.plot.voltage_rounding)
-                    ymi, yma = ax.get_ylim()
-                    if y_max1!=yma or y_min1!=ymi:
+                    y_max1 = round(max_val * AppConfig.plot.voltage_top_margin, 2)
+                    y_min1 = round(min_val * AppConfig.plot.voltage_bottom_margin, 2)
+
+                    if self.y_limit_has_changed(idx + 1, y_min1, y_max1):
                         self._canvas_update_required = True
+                        self.y_limit_update(idx + 1, y_min1, y_max1)
                         ax.set_ylim(top=y_max1, bottom=y_min1)
 
                 # top labels, one per channel
-                self.labels[idx]['U'].configure(text=fmt.format(values.avg_U(), 'V'))
-                self.labels[idx]['I'].configure(text=fmt.format(values.avg_I(), 'A'))
-                self.labels[idx]['P'].configure(text=fmt.format(values.avg_P(), 'W'))
+
+                xpos = x_max - max(1.0, AppConfig.plot.display_top_values_mean_time)
+                avg_idx = np.searchsorted(data.time, xpos)
+
+                self.labels[idx]['U'].configure(text=fmt.format(np.mean(data.channels[idx].U[avg_idx:]), 'V'))
+                self.labels[idx]['I'].configure(text=fmt.format(np.mean(data.channels[idx].I[avg_idx:]), 'A'))
+                self.labels[idx]['P'].configure(text=fmt.format(np.mean(data.channels[idx].P[avg_idx:]), 'W'))
                 tmp = self._gui_config.plot_display_energy==DISPLAY_ENERGY.AH and ('ei', 'Ah') or ('ep', 'Wh')
                 self.labels[idx]['e'].configure(text=fmt.format(self.energy[idx][tmp[0]], tmp[1]))
 
             # ---------------------------------------------------------------------------------------
 
             # axis 0 y limits
-            if y_min!=sys.maxsize:
-                tmp = (y_max, y_min)
-                y_max = max(tmp[0] + 0.02, round(y_max * self._main_plot_limits[0] / self._main_plot_limits[2]) * self._main_plot_limits[2])
-                y_min = min(tmp[1] - 0.02, max(0, round((y_min * self._main_plot_limits[1] - self._main_plot_limits[2] * 0.99) / self._main_plot_limits[2]) * self._main_plot_limits[2]))
-                # if y_max == y_min:
-                #     y_max += self._main_plot_limits[2]
+            if y_min0!=sys.maxsize:
+                y_max0 = round(y_max0 * self._plot_margin.top, 2)
+                y_min0 = round(y_min0 * self._plot_margin.bottom, 2)
 
-                ax = self._ax_data[0].ax
-                ymi, yma = ax.get_ylim()
-                if y_max!=yma or y_min!=ymi:
+                if self.y_limit_has_changed(0, y_min0, y_max0):
                     self._canvas_update_required = True
-                    ax.set_ylim(top=y_max, bottom=y_min)
+                    self.y_limit_update(0, y_min0, y_max0)
+                    self._ax_data[0].ax.set_ylim(top=y_max0, bottom=y_min0)
 
-                # # limit y axis scaling to 5 seconds and a min. change of 5% except for increased limits
-                # yl2 = self._y_limits[0]
-                # ml = (yl2[1] - yl2[0]) * AppConfig.plot.y_limit_scale_value
-                # if y_max>yl2[1] or y_min<yl2[0] or (ts>yl2[2] and (y_min>yl2[0]+ml or y_min<yl2[1]-ml)):
-                #     # self.debug(__name__, 'limits %' % ([yl2,y_min,y_max,ts,ml,tmp]))
-                #     yl2[0] = y_min
-                #     yl2[1] = y_max
-                #     yl2[2] = ts + AppConfig.plot.y_limit_scale_time
-                #     self._ax_data[0].ax.set_ylim(top=y_max, bottom=y_min)
-                #     self._canvas_update_required = True
-
-                #     # plt.xticks(np.arange(min(x), max(x)+1, 1.0))
-
-            # shared x limits for all axis
-            if x_max!=None:
-                for data in self._ax_data:
-                    data.ax.set_xlim(left=x_max-self.get_time_scale(), right=x_max)
-                    data.ax.relim()
-
-            # for data in self._ax_data:
-            #     data.ax.autoscale_view()
-            #     data.ax.relim()
-
-            # if self._gui_config.plot_visibility in(PLOT_VISIBILITY.BOTH, PLOT_VISIBILITY.PRIMARY):
-            #     for line in self._ax_data[0].ax.lines:
-            #         artists.append(line)
-            #         # data.ax.draw_artist(line)
-            # if self._gui_config.plot_visibility in(PLOT_VISIBILITY.BOTH, PLOT_VISIBILITY.VOLTAGE):
-            #     for line in self._ax_data[1].ax.lines:
-            #         artists.append(line)
-                    # data.ax.draw_artist(line)
-
-            # if blt:
-            #     self.canvas.update()
-            #     self.canvas.flush_events()
-
+            # x is shared
+            if x_max!=x_min:
+                self._ax_data[0].ax.set_xlim(left=x_min, right=x_max)
+                # self._ax_data[0].ax.set_xlim(left=x_max, right=x_min)
+                # for data in self._ax_data:
+                #     data.ax.set_xlim(left=x_min, right=x_max)
 
             if self.popup_hide_timeout!=None and ts>self.popup_hide_timeout:
                 self.show_popup(None)
-
-            self.power_sum = None
 
             artists.append(self._ax_data[0].legend)
 
@@ -612,20 +588,20 @@ class Plot(Sensor.Sensor):
             if self._canvas_update_required:
                 self._canvas_update_required = False
                 self.info(__name__, 'canvas update')
-                for data in self._ax_data:
-                    data.ax.autoscale_view()
-                    data.ax.relim()
+
 
                 # artists = []
                 # for data in self._ax_data:
                 #     if data.ax.get_visible():
-                #         artists.extend(data.ax.get_children())
+                #         for child in data.ax.get_children():
+                #             print(type(child))
+                #             if isinstance(child, (matplotlib.axis.YAxis, matplotlib.legend.Legend, matplotlib.text.Text)):
+                #             # if isinstance(child, (matplotlib.spines.Spine, matplotlib.axis.XAxis, matplotlib.legend.Legend, matplotlib.text.Text)):
+                #                 artists.insert(0, child)
                 # print(artists)
                 self.canvas.draw()
-#                self.canvas.flush_events()
+                artists = self.plot_get_all_artists()
 
-        # except Exception as e:
-        #     AppConfig._debug_exception(e)
         finally:
             self._plot_lock.release()
 
@@ -658,4 +634,3 @@ class Plot(Sensor.Sensor):
             p.append('comp_rrq=%u' % (self.compressed_min_records<AppConfig.plot.compression.min_records and (AppConfig.plot.compression.min_records - self.compressed_min_records) or 0))
 
             self.debug_label.configure(text=' '.join(p))
-

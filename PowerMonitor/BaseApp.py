@@ -79,7 +79,7 @@ class BaseApp(object):
                     if thread.is_alive():
                         n += 1
                 if thread.is_alive():
-                    self.info(_name__, 'waiting for thread ident %s (%u left)' % (thread.ident % n))
+                    self.info(__name__, 'waiting for thread ident %s (%u left)' % (thread.ident % n))
                     thread.join(1)
                 else:
                     count -= 1

@@ -14,6 +14,8 @@ import time
 import numpy as np
 import json
 
+class NamedTuples:
+    YLimit = namedtuple('YLimit', ('min', 'max', 'ts'))
 
 class GuiConfig(object):
 
@@ -117,8 +119,24 @@ class MainAppCli(Plot.Plot):
         raise ValueError('limits limits: None missing: %s' % limits)
 
 
-    def clear_y_limits(self, n):
-        self._y_limits[n] = [sys.maxsize, 0, 0] # min max timestamp
+    def y_limit_clear(self, axis):
+        self._y_limits[axis] = NamedTuples.YLimit(min=sys.maxsize, max=0, ts=0)
+
+    def y_limit_update(self, axis, min, max):
+        self._y_limits[axis] = NamedTuples.YLimit(min=min, max=max, ts=time.monotonic())
+
+    def _y_limit_has_changed(self, axis, min, max):
+        res = self._y_limit_has_changed(axis, min, max)
+        print('y_limit_has_changed',axis,min,max,res)
+        return res
+
+    def y_limit_has_changed(self, axis, min, max, timeout=5, round_digits=2, tolerance=0.01):
+        li = self._y_limits[axis]
+        return (li.ts == 0) or \
+            (round(min + tolerance, round_digits) < round(li.min, round_digits)) or \
+            (round(max - tolerance, round_digits) > round(li.max, round_digits)) or \
+                ((time.monotonic() + timeout >= li.ts) and (round(min, round_digits) != round(li.min, round_digits) or round(max, round_digits) != round(li.max, round_digits)))
+
 
     def add_stats_minmax(self, name, value=0, type='max', reset=False):
         if reset:
@@ -151,9 +169,9 @@ class MainAppCli(Plot.Plot):
             self.compressed_min_records = 0
             self.plot_updated = 0
             self.plot_updated_times = []
-            self._y_limits = [()]*4
-            for i in range(0, 4):
-                self.clear_y_limits(i)
+            self._y_limits = [[]]*4
+            for i in range(0, len(self._y_limits)):
+                self.y_limit_clear(i)
             self.power_sum = [ 1 ]
             self.values = PlotValuesContainer(self.channels)
             if self._animation.active:
@@ -171,12 +189,8 @@ class MainAppCli(Plot.Plot):
         self.reset_data()
 
     def reset_energy(self):
-        self.energy = {
-            0: {'t': 0, 'ei': 0, 'ep': 0},
-            1: {'t': 0, 'ei': 0, 'ep': 0},
-            2: {'t': 0, 'ei': 0, 'ep': 0},
-            'stored': 0,
-        }
+        self.energy = dict(enumerate([{'t': 0, 'ei': 0, 'ep': 0}]*3))
+        self.energy['stored'] = 0
 
 class MainApp(MainAppCli):
 
@@ -188,8 +202,6 @@ class MainApp(MainAppCli):
         self._logger = logger
         self._app_config = app_config
         self._bases = Tools.get_bases(self.__module__, self.__class__.__qualname__)
-
-        print(self._bases)
 
         for func_name in ('start', 'destroy', 'reload', 'init_vars'):
             obj = Tools.LambdaCaller(Tools.execute_method, (self, self._bases, func_name))
@@ -286,7 +298,7 @@ class MainApp(MainAppCli):
 
         # for data in self._ax_data:
         #     data.ax.tick_params(labelsize=self._fonts.plot_font.cget('size'))
-        # self.legend()
+        # self.add_ticks()
 
 
     def destroy(self):
@@ -303,20 +315,14 @@ class MainApp(MainAppCli):
         self._gui.tk.call('tk', 'scaling', self._geometry_info[2])
 
         if AppConfig.gui.color_scheme == COLOR_SCHEME.DARK:
+            self.CHANNELS = ['lime', 'deepskyblue', '#b4b0d1', '#0e830e', '#8681b5', '#268daf', 'red']
             self.BG_COLOR = 'black'
             self.TEXT_COLOR = 'white'
             self.PLOT_TEXT = self.TEXT_COLOR
             self.PLOT_GRID = 'gray'
             self.PLOT_BG = "#303030"
-            self.FG_CHANNEL0 = 'red' #aggregated power
-            self.FG_CHANNEL1 = 'lime'
-            self.FG_CHANNEL2 = 'deepskyblue'
-            self.FG_CHANNEL3 = '#b4b0d1' # 'lavender'
         elif AppConfig.gui.color_scheme == COLOR_SCHEME.LIGHT:
-            self.FG_CHANNEL0 = 'red'
-            self.FG_CHANNEL1 = 'green'
-            self.FG_CHANNEL2 = 'blue'
-            self.FG_CHANNEL3 = 'aqua'
+            self.CHANNELS = ['green', 'blue', 'aqua', 'green', 'blue', 'aqua', 'red']
             self.BG_COLOR = 'white'
             self.TEXT_COLOR = 'black'
             self.PLOT_TEXT = self.TEXT_COLOR
@@ -325,10 +331,13 @@ class MainApp(MainAppCli):
         else:
             raise ValueError('invalid color scheme')
 
-        Channel.COLOR_AGGREGATED_POWED = self.FG_CHANNEL0
-        AppConfig.channels[0].color = self.FG_CHANNEL1
-        AppConfig.channels[1].color = self.FG_CHANNEL2
-        AppConfig.channels[2].color = self.FG_CHANNEL3
+        Channel.COLOR_AGGREGATED_POWER = self.CHANNELS[6]
+
+        for i in range(3):
+            if AppConfig.channels[i].color=='':
+                AppConfig.channels[i].color = self.CHANNELS[i]
+            if AppConfig.channels[i].hline_color=='':
+                AppConfig.channels[i].hline_color = self.CHANNELS[i + 3]
 
 
         self._fonts = namedtuple('GuiFonts', ['top_font', 'plot_font', 'debug_font', 'label_font'])
@@ -387,7 +396,8 @@ class MainApp(MainAppCli):
         except Exception as e:
             self.info(__name__, 'invalid configuration: %s: %s', file, e)
             self._gui_config = GuiConfig(self, defaults, defaults.keys())
-            self._gui_config.disabled = False
+
+        self._gui_config.disabled = False
 
 
     def _write_gui_config(self):
@@ -477,7 +487,7 @@ class MainApp(MainAppCli):
             event = 1
         self._gui_config.plot_time_scale = self._gui_config.plot_time_scale + 0.10 * event
         self._gui_config.plot_time_scale = min(1.0, max(0.0, self._gui_config.plot_time_scale))
-        self.legend();
+        self.add_ticks()
         self._animation.update()
         self.show_popup('%u of %u seconds (%.1f%%)' % (self.get_time_scale(), AppConfig.plot.max_time, self._gui_config.plot_time_scale * 100))
         # self.change_averaging_mode(self.get_time_scale())

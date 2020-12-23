@@ -15,6 +15,7 @@ class App(Base):
     config_dir = ('.', (Param.ReadOnly,))
     config_file = ('{config_dir}/config.json', (Param.ReadOnly,))
     energy_storage_file = '{config_dir}/energy.json'
+    energy_storage_num_backups = 3
     pid_file = '{config_dir}/power_monitor.pid'
 
     store_energy_interval = TimeConverter.value(60)
@@ -49,8 +50,10 @@ class Channel(ItemBase):
     index = (lambda path: path.index, (Param.ReadOnly,))
     enabled = False
     voltage = (None, (float))
+    color = ''
+    hline_color = ''
 
-    COLOR_AGGREGATED_POWED = 'red'
+    COLOR_AGGREGATED_POWER = 'red'
 
     def __init__(self, struct, index):
         ItemBase.__init__(self, struct, index)
@@ -60,7 +63,9 @@ class Channel(ItemBase):
 
     def _color_for(self, type):
         if type=='Psum':
-            return Channel.COLOR_AGGREGATED_POWED
+            return Channel.COLOR_AGGREGATED_POWER
+        if type=='hline':
+            return self.hline_color
         return self.color
 
 
@@ -72,29 +77,24 @@ class Plot(Base):
     line_width = 1.0
 
     display_energy = Enums.DISPLAY_ENERGY.AH
+    display_top_values_mean_time = TimeConverter.value(5)
 
     current_top_margin = MarginConverter.top_value(5),                  # +5% / 105%
     current_bottom_margin = MarginConverter.bottom_value(10),           # -10% / 90%
-    current_rounding = 0.1                                              # 100mA
 
     power_top_margin = MarginConverter.top_value(5),
     power_bottom_margin = MarginConverter.bottom_value(10),
-    power_rounding = 0.5                                                # 0.5W
-
-    y_limit_scale_time = TimeConverter.value(5.0)
-    y_limit_scale_value = 0.05
 
     voltage_top_margin = MarginConverter.top_value(1),
     voltage_bottom_margin = MarginConverter.bottom_value(1),
-    voltage_rounding = 0.1                                              # 100mV
 
     def __init__(self, struct):
         Base.__init__(self, struct)
 
 class PlotCompression(Base):
 
-    min_records = 100
-    uncompressed_time = TimeConverter.value(15)
+    min_records = 64
+    uncompressed_time = TimeConverter.value(60)
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)
@@ -240,12 +240,6 @@ class Channels(list):
 
     def __init__(self):
         list.__init__([])
-
-    def items(self):
-        tmp = []
-        for item in list(self):
-            tmp.append((len(tmp), item))
-        return tmp
 
 class ChannelCalibration(object):
     def __init__(self, config):

@@ -65,14 +65,17 @@ class FormatFloat(object):
         return (('%%.%uf' % n) % (value), unit)
 
     def format(self, value, unit):
-        value, unit = self.__format(value, unit)
-        if STRIP.TRAILING in self.strip and value.find('.')!=-1:
-            value = value.rstrip('0')
-            if value.endswith('.'):
-                value += '0'
-        if STRIP.LEADING in self.strip and value.startswith('0.'):
-            value = value[1:]
-        return '%s%s%s' % (value, self.spacer, unit)
+        try:
+            value, unit = self.__format(value, unit)
+            if STRIP.TRAILING in self.strip and value.find('.')!=-1:
+                value = value.rstrip('0')
+                if value.endswith('.'):
+                    value += '0'
+            if STRIP.LEADING in self.strip and value.startswith('0.'):
+                value = value[1:]
+            return '%s%s%s' % (value, self.spacer, unit)
+        except:
+            return 'N/A'
 
 # f = FormatFloat()
 

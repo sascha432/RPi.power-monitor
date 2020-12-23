@@ -4,89 +4,21 @@
 
 from PowerMonitor.AppConfig import Channel
 import numpy as np
+
 class PlotValues(object):
     def __init__(self, channel: Channel):
         self._channel = channel
-        self.clear()
-
-    def __avg_attr(self, attr, num = 10):
-        values = object.__getattribute__(self, attr)
-        if not values:
-            raise ValueError('no values in list: %s' % attr)
-            # return 0
-        if num>len(values):
-            return np.average(values)
-        return np.average(values[-num:])
-
-    def __min_attr(self, attr, idx=0):
-        values = object.__getattribute__(self, attr)
-        if not values[idx:]:
-            raise ValueError('no values in list: %s' % attr)
-            # return None
-        return min(values)
-
-    def __max_attr(self, attr, idx=0):
-        values = object.__getattribute__(self, attr)
-        if not values[idx:]:
-            raise ValueError('no values in list: %s' % attr)
-            # return None
-        return max(values)
-
-    def avg_U(self, num=10):
-        return self.__avg_attr('U', num)
-
-    def avg_I(self, num=10):
-        return self.__avg_attr('I', num)
-
-    def avg_P(self, num=10):
-        return self.__avg_attr('P', num)
-
-    def min_U(self, idx=0):
-        return self.__min_attr('U', idx)
-
-    def min_I(self, idx=0):
-        return self.__min_attr('I', idx)
-
-    def min_P(self, idx=0):
-        return self.__min_attr('P', idx)
-
-    def max_U(self, idx=0):
-        return self.__max_attr('U', idx)
-
-    def max_I(self, idx=0):
-        return self.__max_attr('I', idx)
-
-    def max_P(self, idx=0):
-        return self.__max_attr('P', idx)
-
-    def voltage(self):
-        return self.U
-
-    def current(self):
-        return self.I
-
-    def power(self):
-        return self.P
+        self.U = []
+        self.P = []
+        self.I = []
 
     def __len__(self):
         return len(self.U)
 
-    def set_items(self, type_str, items):
-        if type_str=='U':
-            self.U = items
-        elif type_str=='I':
-            self.I = items
-        elif type_str=='P':
-            self.P = items
-        else:
-            raise KeyError('set_items: %s' % type_str)
-
-        # self.__setitem__(type_str, items)
-        # if type_str in self._keys:
-        #     tmp = object.__getattribute__(self, type_str)
-        #     tmp = items.copy()
-        #     return
-        # raise AttributeError('invalid type: %s' % type_str)
+    def __setattr__(self, key, val):
+        if not key.startswith('_') and not key in ('U', 'I', 'P'):
+            raise KeyError('attribute %s readonly' % key)
+        object.__setattr__(self, key, val)
 
     def items(self):
         return (
@@ -96,10 +28,9 @@ class PlotValues(object):
         )
 
     def clear(self):
-        self.U = []
-        self.P = []
-        self.I = []
-        self._keys = ('U', 'I', 'P')
+        self.U.clear()
+        self.P.clear()
+        self.I.clear()
 
 class PlotValuesContainer(object):
 
@@ -110,7 +41,7 @@ class PlotValuesContainer(object):
         self._t = []
 
     def clear(self):
-        self._t = []
+        self._t.clear()
         for val in self._values:
             val.clear()
 
@@ -150,17 +81,20 @@ class PlotValuesContainer(object):
 
     def set_items(self, type_str, channel, items):
         if type_str=='t':
-            self._t = items[:]
+            self._t = items
         elif channel<0 or channel>=len(self._values):
             raise ValueError('invalid channel: %u: type: %s' % (channel, type_str))
-        else:
-            self._values[channel].set_items(type_str, items)
+        elif type_str in ('U', 'I', 'P'):
+            object.__setattr__(self._values[channel], type_str, items)
 
     def items(self):
         tmp = []
         for values in self._values:
             tmp.append((values._channel, values))
         return tmp
+
+    def values(self):
+        return self._values
 
     def all(self):
         tmp = [('t', 0, self._t)]

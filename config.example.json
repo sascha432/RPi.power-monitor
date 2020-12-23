@@ -9,7 +9,7 @@
             "voltage": 5.3,
             "calibration": {
                 // shunt resistance in milliohm
-                "shunt": 20.0,
+                "shunt": 25.0,
                 // check the raw sensor values with no load attached and everything warmed up to working temperature
                 // compare if there is a big different between a hot and cold device. a temperature compensation can easily be added
                 // raw sensor offset for no current (Vshunt=0.0000mV)
@@ -44,29 +44,53 @@
             }
         }
     ],
+    "idle_check_cmd": "/usr/bin/xset -display {DISPLAY} q",
     "gui": {
+        // with x height x zoom
+        "geometry": "800x480x1.0",
+        "color_scheme": "DARK",
         "fullscreen": true,
-        "display": ":0.0"
+        "display": ":0.0",
+        "key_bindings": {
+            "end_fullscreen": "<Escape>",
+            "menu": "<F1>",
+            "plot_display_energy": "<F4>",
+            "plot_primary_display": "<F3>",
+            "plot_visibility": "<F2>",
+            "quit": "<Alt-F4>",
+            "reload_config": "<Control-F5>",
+            "reload_gui_config": "<Alt-F5>",
+            "reset_plot": "<Control-F10>",
+            "toggle_debug": "<Control-F9>",
+            "toggle_fullscreen": "<F11>"
+        }
     },
-    // "limits": {
-    //     "repeat_warning_delay": 300,
-    //     "warning_command": "logger -t {tag} {message}"
-    // },
     "plot": {
+        // on a raspberry pi 3, it can do ~3-15 frames per second
+        // 15-30% load on a single core with 2 updates per second, depending on the number of plots
         "refresh_interval": 250,
-        "idle_refresh_interval": 3000,
-        "max_values": 1000,
-        "max_time": "15min",
+        // cuts down CPU load to a bare minimum when the monitor is off, but keeps the screen updated
+        "idle_refresh_interval": 5000,
+        "max_values": 8192,
+        // "max_time": "30min",
+        "max_time": 900,
         "line_width": 1.0,
-        "main_top_margin": 5,
-        "main_bottom_margin": 10,
-        "main_current_rounding": 0.25,
-        "main_power_rounding": 3.0,
-        "voltage_top_margin": 0.5,
-        "voltage_bottom_margin": 0.5,
+        // +5% or 105%
+        "current_top_margin": 5,
+        // -12% or 88%
+        "current_bottom_margin": 12,
+        "power_top_margin": 5,
+        "power_bottom_margin": 10,
+        "voltage_top_margin": 1,
+        "voltage_bottom_margin": 1,
         "compression": {
             "uncompressed_time": 60
         }
+    },
+    "ina3221": {
+        "averaging_mode": "x16",
+        "vshunt_conversion_time": "time_8244_us",
+        "vbus_conversion_time": "time_8244_us"
     },
     "mqtt": {
         "host": "localhost",
@@ -74,10 +98,7 @@
         "update_interval": 30,
         "topic_prefix": "home",
         "auto_discovery": true,
-        "auto_discovery_prefix": "homeassistant",
-    },
-    "backlight": {
-        "gpio": 18
+        "auto_discovery_prefix": "homeassistant"
     },
     "verbose": false,
     "headless": false

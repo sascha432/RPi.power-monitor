@@ -72,21 +72,24 @@ class Idle(BaseApp.BaseApp):
     def check_idle_thread(self):
         self.thread_register(__name__)
 
-        self.terminate.wait(5)
-        self._state = self.ani_get_speed_type()
+        # wait for the animation to start
+        while not self.terminate.is_set() and not self._animation.active:
+            self.terminate.wait(1)
+
+        self._state = self._animation.running
 
         while not self.terminate.is_set():
             sleep = AppConfig.idle_check_interval
-            if self.ani:
+            if not self._animation.active:
+                sleep = 5
+            elif self.ani:
                 state = self._get_state()
                 if state==None:
-                    sleep = 120
+                    sleep = max(120, sleep) # wait at least 2 minutes after an error
                 elif state!=self._state:
                     self._state = state
                     self.debug(__name__, 'set interval for monitor enabled: %s', state)
                     self.set_screen_update_rate(state)
-                if self._state==True:
-                    sleep *= 5
             self.terminate.wait(sleep)
 
         self.thread_unregister(__name__)

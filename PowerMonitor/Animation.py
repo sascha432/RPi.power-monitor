@@ -59,6 +59,10 @@ class Animation(object):
         return self._mode in(Mode.RUNNING, Mode.IDLE)
 
     @property
+    def running(self):
+        return self._mode==Mode.RUNNING
+
+    @property
     def locked(self):
         return self._lock.locked()
 

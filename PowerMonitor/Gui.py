@@ -31,9 +31,7 @@ class Gui(tk.Tk):
     def report_callback_exception(self, exc, val, tb):
         # traceback.format_exception(exc, val, tb)
         self._parent.error(__name__, '%s: %s' % (exc.__class__.__name__, val))
-        if str(val).startswith('shape mismatch:'):
-            self._parent.reset_values()
-        elif AppConfig._debug:
+        if AppConfig._debug:
             AppConfig._debug_exception(val)
 
     def mainloop(self):
