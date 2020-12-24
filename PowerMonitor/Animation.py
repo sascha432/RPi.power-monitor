@@ -126,17 +126,28 @@ class Animation(object):
                 self._parent._canvas_update_required = True
                 if not self._ani:
                     raise ValueError('_ani is invalid: %s' % type(self._ani))
-                # self._ani._stop()
                 self.stop()
-                # self._ani.event_source.interval = self._interval
-                # self.ani = None
-                # self.ani_schedule_start()
-                # self._ani.event_source.start()
                 self._ani = FuncAnimation(self._parent.fig, self._parent.plot_values, interval=self._interval, blit=True)
                 self.start()
                 self._parent.canvas.draw_idle()
             finally:
                 self.release()
 
+    def restart(self):
+        self.debug('restart')
+        self.end()
+        self.acquire()
+        try:
+            self._ani = FuncAnimation(self._parent.fig, self._parent.plot_values, interval=self._interval, blit=True)
+            self.start()
+            self._parent.canvas.draw_idle()
+        finally:
+            self.release()
+
+    def end(self):
+        self.debug('end')
+        if self._ani:
+            self._ani.event_source.stop()
+            self._ani = None
 
 Animation.Mode = Mode
