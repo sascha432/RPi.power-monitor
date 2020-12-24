@@ -20,6 +20,8 @@ INA3211_CONFIG = SDL_Pi_INA3221.INA3211_CONFIG
 
 class Sensor(Mqtt.Mqtt):
 
+    ENERGY_MIN_READTIME = 0.005
+
     def __init__(self):
         # AppConfig = config
         # Mqtt.Mqtt.__init__(self, logger, config)
@@ -49,6 +51,13 @@ class Sensor(Mqtt.Mqtt):
         except Exception as e:
             self.error(__name__, 'exception while initializing INA3221 sensor: %s' % e)
             return False
+
+        if self.ina3221._channel_read_time<Sensor.ENERGY_MIN_READTIME:
+            print(AppConfig.ignore_warnings)
+            if AppConfig.ignore_warnings<=0:
+                raise RuntimeWarning("Sensor read time below minimum. %.6f<%s. Energy readings won't be available. Start with --ingore-warnings=<number>" % (self.ina3221._channel_read_time, Sensor.ENERGY_MIN_READTIME))
+            AppConfig.ignore_warnings -= 1
+
         return True
 
     def start(self):
@@ -135,18 +144,19 @@ class Sensor(Mqtt.Mqtt):
                                 self.add_stats_minmax('ch%u_I' % index, current)
                                 self.add_stats_minmax('ch%u_P' % index, power)
 
-                                if self.energy[index]['t']==0 or ts==0:
-                                    self.energy[index]['t'] = ts
-                                else:
-                                    diff = ts - self.energy[index]['t']
-                                    # do not add if there is a gap that is over 3x times the expected read time
-                                    if diff < diff_limit:
-                                        self.energy[index]['ei'] += (diff * current / 3600)
-                                        self.energy[index]['ep'] += (diff * power / 3600)
+                                if self.ina3221._channel_read_time>=Sensor.ENERGY_MIN_READTIME:
+                                    if self.energy[index]['t']==0 or ts==0:
+                                        self.energy[index]['t'] = ts
                                     else:
-                                        if diff>diff_limit * 10:
-                                            self.error(__name__, 'sensor read timeout for channel number %u: %.3fsec channels: %u read time: %.3fms', (index + 1), diff, len(self.channels), self.ina3221._channel_read_time / 1000000)
-                                    self.energy[index]['t'] = ts
+                                        diff = ts - self.energy[index]['t']
+                                        # do not add if there is a gap that is over 3x times the expected read time
+                                        if diff < diff_limit:
+                                            self.energy[index]['ei'] += (diff * current / 3600)
+                                            self.energy[index]['ep'] += (diff * power / 3600)
+                                        else:
+                                            if diff>diff_limit * 10:
+                                                self.error(__name__, 'sensor read timeout for channel number %u: %.3fsec channels: %u read time: %.6fms', (index + 1), diff, len(self.channels), self.ina3221._channel_read_time / 1000000)
+                                        self.energy[index]['t'] = ts
 
                                 self.data[1][index][0].append(loadvoltage)
                                 self.data[1][index][1].append(current)
@@ -211,10 +221,12 @@ class Sensor(Mqtt.Mqtt):
                             try:
                                 t = tmp[str(index)]
                             except:
-                                t = tmp[index]
-                            data['ei'] = float(t['ei'])
-                            data['ep'] = float(t['ep'])
-                            e = None
+                                try:
+                                    t = tmp[index]
+                                    data['ei'] = float(t['ei'])
+                                    data['ep'] = float(t['ep'])
+                                except:
+                                    pass
                         self._data_lock.acquire()
                         try:
                             self.energy.update(energy)
