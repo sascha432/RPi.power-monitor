@@ -484,17 +484,20 @@ class MainApp(MainAppCli):
         return "break"
 
     def toggle_plot_visibility(self, event=None):
+        self._animation.end()
         self._gui_config.plot_visibility = Tools.EnumIncr(self._gui_config.plot_visibility)
         self.debug(__name__, 'visibility %s', str(self._gui_config.plot_visibility))
         self.set_plot_geometry()
         self.reconfigure_axis()
-        self._animation.update()
+        self.canvas.draw()
+        self._animation.restart()
         return 'break'
 
     def toggle_primary_display(self, event=None):
+        self._animation.end()
         self._gui_config.plot_primary_display = Tools.EnumIncr(self._gui_config.plot_primary_display)
         self.reconfigure_axis()
-        self._animation.update()
+        self._animation.restart()
         return 'break'
 
     def toggle_display_energy(self, event=None):
@@ -513,4 +516,3 @@ class MainApp(MainAppCli):
             self.popup_label.configure(text=msg)
             self.popup_frame.pack()
             self.popup_frame.place(**self._popup_placement)
-

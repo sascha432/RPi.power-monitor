@@ -26,6 +26,7 @@ parser.add_argument('--print', help='check and display configuration', choices=[
 parser.add_argument('--section', help='config section to display', type=str, default=None)
 parser.add_argument('--key', help='config key(s) to display', action="append", nargs='*', default=None)
 parser.add_argument('--debug', help='enable debug mode', action='store_true', default=None)
+parser.add_argument('--ignore-warnings', help='number of warnings to ignore and continue', type=int, default=0)
 
 args = parser.parse_args()
 
@@ -50,6 +51,7 @@ AppConfig = root_object
 AppConfig.channels = dict(zip(range(0, 3), list(AppConfig.channels)))
 setattr(AppConfig, 'get_filename', config.get_filename)
 
+AppConfig.ignore_warnings = args.ignore_warnings
 if args.verbose!=None:
     AppConfig.verbose = args.verbose
 if args.headless!=None:

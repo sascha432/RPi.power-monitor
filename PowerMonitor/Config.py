@@ -21,6 +21,7 @@ class Config:
         loader = Loader('app', AppConfig.App(DictType({
             'channels': AppConfig.ChannelList(RangeType(range(0, 3), AppConfig.Channel, DictType({
                 'name': Param(lambda path: ('Channel %u' % (path.index + 1))),
+                'y_limits': AppConfig.YLimits(),
                 'calibration': AppConfig.Calibration()
             }))),
             'plot': AppConfig.Plot(DictType({
