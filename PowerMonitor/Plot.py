@@ -285,9 +285,13 @@ class Plot(Sensor.Sensor):
         self._ax_data[0].ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(self.update_y_ticks_primary))
 
         if self._gui_config.plot_visibility==PLOT_VISIBILITY.VOLTAGE:
-            n = 8
+            n = 6
+        elif len(self.channels)==1:
+            n = 6
+        elif len(self.channels)==2:
+            n = 3
         else:
-            n = len(self.channels) > 1 and 3 or 6
+            n = 2
         for idx, channel in enumerate(self.channels):
             ax = self._ax_data[idx + 1].ax
             ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(n))

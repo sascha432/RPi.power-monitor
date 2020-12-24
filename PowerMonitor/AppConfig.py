@@ -97,9 +97,9 @@ class Plot(Base):
     max_values = 8192
     max_time = TimeConverter.value(900)
 
-    line_width = 5.0
+    line_width = 3.5
     grid_line_width = 1.0
-    font_size = 19.0
+    font_size = 20.5
 
     display_energy = Enums.DISPLAY_ENERGY.AH
     display_top_values_mean_time = TimeConverter.value(5)

@@ -207,8 +207,8 @@ class Sensor(Mqtt.Mqtt):
                 if self._errors>0:
                     self.energy[index]['t'] = 0
                     while True:
-                        self.info(__name__, 'waiting 30 seconds before trying to reintialize the sensor: errors=%u', self._errors)
-                        self._read_sensor_thread_listener.sleep(30.0, self.read_sensor_thread_handler)
+                        self.info(__name__, 'waiting 5 seconds before trying to reintialize the sensor: errors=%u', self._errors)
+                        self._read_sensor_thread_listener.sleep(5.0, self.read_sensor_thread_handler)
                         if self._read_sensor_thread_state['quit']:
                             break
                         if self._init_ina3221_sensor(True):

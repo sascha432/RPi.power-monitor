@@ -55,8 +55,6 @@ or
 
 Set the DISPLAY environment variable before starting the monitor or pass the display with `--display=:0`
 
-
-
 #### GUI configuration and live preview
 
 The configuration is stored in `gui-<channels>-<geometry>-auto.json`. To modify it, remove `-auto` from the filename.
@@ -70,7 +68,9 @@ Pass the argument `--headless` to disable the GUI
 ```
 usage: power_monitor.py [-h] [-C CONFIG_DIR] [--display DISPLAY] [--headless]
                         [--fullscreen] [--daemon] [--verbose] [--check]
-                        [--print {json,yaml}] [--debug]
+                        [--print {json,yaml,raw}] [--section SECTION]
+                        [--key [KEY [KEY ...]]] [--debug]
+                        [--ignore-warnings IGNORE_WARNINGS]
 
 Power Monitor
 
@@ -84,8 +84,14 @@ optional arguments:
   --daemon              run as daemon
   --verbose             enable debug output
   --check               check configuration
-  --print {json,yaml}   check and display configuration
+  --print {json,yaml,raw}
+                        check and display configuration
+  --section SECTION     config section to display
+  --key [KEY [KEY ...]]
+                        config key(s) to display
   --debug               enable debug mode
+  --ignore-warnings IGNORE_WARNINGS
+                        number of warnings to ignore and continue
 ```
 
 ## GUI control
@@ -102,15 +108,23 @@ The keyboard bindings can be configured in the section `gui.key_bindings` in `co
 
 | Key | Action |
 | - | - |
-| F1 | Menu |
 | Escape | Leave fullscreen |
 | F11 | Toggle full screen |
-| F2 | Change plot visibility |
-| F3 | Cycle through current, power and aggregated power |
-| F4 | Toggle energy Ah/Wh |
-| Alt-F5 | Reload GUI configuration |
-| Control-F5 | Reload GUI configuration |
-| Control-F10 | Reset plot and clear all data |
 | Alt-F4 | Quit |
 
-For more bindings, check `power_monitor --check --print=yaml --section=app.gui.keybindings`
+For more bindings, check `power_monitor --print=yaml --section=app.gui.key_bindings`
+
+```
+end_fullscreen: '<Escape>'
+menu: '<F1>'
+plot_display_energy: '<F4>'
+plot_primary_display: '<F3>'
+plot_visibility: '<F2>'
+quit: '<Alt-F4>'
+raw_sensor_values: '<Control-r>'
+reload_config: '<Control-F5>'
+reload_gui_config: '<Alt-F5>'
+reset_plot: '<Control-F10>'
+toggle_debug: '<Control-F9>'
+toggle_fullscreen: '<F11>'
+```
