@@ -37,6 +37,7 @@ class KEY_BINDINGS(Enum):
     RESET_PLOT = 8
     QUIT = 9
     MENU = 10
+    RAW_SENSOR_VALUES = 11
 
 class COLOR_SCHEME(Enum):
     DARK = 0

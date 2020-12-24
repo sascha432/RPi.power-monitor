@@ -33,9 +33,23 @@ class Sensor(Mqtt.Mqtt):
         self._read_count = 0
         self._errors = 0
         self._compress_data_timeout = 0
+        self._raw_values = False
 
         if not self._init_ina3221_sensor():
             self._errors += 1
+
+    def set_raw_values(self, raw):
+        self._data_lock.acquire()
+        try:
+            self.debug(__name__, 'raw sensor values: %s' % raw)
+            self._raw_values = raw
+            self.reset_avg()
+            self.reset_data()
+            self.reset_values(False)
+        finally:
+            self._data_lock.release()
+        self.canvas.draw()
+        self.show_popup('Raw sensor values %s' % (raw and 'enabled' or 'disabled'))
 
     def _init_ina3221_sensor(self, init_calib=False):
         if AppConfig.ina3221.auto_mode_sensor_values_per_second!=None and AppConfig.ina3221.auto_mode_sensor_values_per_second!=0:
@@ -107,14 +121,21 @@ class Sensor(Mqtt.Mqtt):
                             tmp.append((0, 0, 0, 0))
                         else:
                             try:
-                                busvoltage = self.ina3221.getBusVoltage_V(ch)
-                                shuntvoltage = self.ina3221.getShuntVoltage_V(ch)
-                                current = self.ina3221.getCurrent_mA(ch)
-                                loadvoltage = busvoltage - shuntvoltage
-                                current = current / 1000.0
-                                power = (current * busvoltage)
-                                self.add_stats('sensor', 1)
-                                tmp.append((loadvoltage, current, power, time.monotonic()))
+                                if self._raw_values:
+                                    current = self.ina3221._getShuntVoltage_raw(ch)
+                                    busvoltage = self.ina3221._getBusVoltage_raw(ch)
+                                    power = current * busvoltage
+                                    self.add_stats('sensor', 1)
+                                    tmp.append((busvoltage, current, power, time.monotonic()))
+                                else:
+                                    busvoltage = self.ina3221.getBusVoltage_V(ch)
+                                    shuntvoltage = self.ina3221.getShuntVoltage_V(ch)
+                                    current = self.ina3221.getCurrent_mA(ch)
+                                    loadvoltage = busvoltage - shuntvoltage
+                                    current = current / 1000.0
+                                    power = (current * busvoltage)
+                                    self.add_stats('sensor', 1)
+                                    tmp.append((loadvoltage, current, power, time.monotonic()))
                             except Exception as e:
                                 self.add_stats('senerr', 1)
                                 self.error(__name__, 'exception while reading INA3221 sensor: %s', str(e))
@@ -135,36 +156,37 @@ class Sensor(Mqtt.Mqtt):
                             for index, (loadvoltage, current, power, ts) in enumerate(tmp):
                                 #(loadvoltage, current, power, ts) = data
 
-                                self.averages[0][index] += 1
-                                self.averages[1][index] += loadvoltage
-                                self.averages[2][index] += current
-                                self.averages[3][index] += power
+                                if not self._raw_values:
+                                    self.averages[0][index] += 1
+                                    self.averages[1][index] += loadvoltage
+                                    self.averages[2][index] += current
+                                    self.averages[3][index] += power
 
-                                self.add_stats_minmax('ch%u_U' % index, loadvoltage)
-                                self.add_stats_minmax('ch%u_I' % index, current)
-                                self.add_stats_minmax('ch%u_P' % index, power)
+                                    self.add_stats_minmax('ch%u_U' % index, loadvoltage)
+                                    self.add_stats_minmax('ch%u_I' % index, current)
+                                    self.add_stats_minmax('ch%u_P' % index, power)
 
-                                if self.ina3221._channel_read_time>=Sensor.ENERGY_MIN_READTIME:
-                                    if self.energy[index]['t']==0 or ts==0:
-                                        self.energy[index]['t'] = ts
-                                    else:
-                                        diff = ts - self.energy[index]['t']
-                                        # do not add if there is a gap that is over 3x times the expected read time
-                                        if diff < diff_limit:
-                                            self.energy[index]['ei'] += (diff * current / 3600)
-                                            self.energy[index]['ep'] += (diff * power / 3600)
+                                    if self.ina3221._channel_read_time>=Sensor.ENERGY_MIN_READTIME:
+                                        if self.energy[index]['t']==0 or ts==0:
+                                            self.energy[index]['t'] = ts
                                         else:
-                                            if diff>diff_limit * 10:
-                                                self.error(__name__, 'sensor read timeout for channel number %u: %.3fsec channels: %u read time: %.6fms', (index + 1), diff, len(self.channels), self.ina3221._channel_read_time / 1000000)
-                                        self.energy[index]['t'] = ts
+                                            diff = ts - self.energy[index]['t']
+                                            # do not add if there is a gap that is over 3x times the expected read time
+                                            if diff < diff_limit:
+                                                self.energy[index]['ei'] += (diff * current / 3600)
+                                                self.energy[index]['ep'] += (diff * power / 3600)
+                                            else:
+                                                if diff>diff_limit * 10:
+                                                    self.error(__name__, 'sensor read timeout for channel number %u: %.3fsec channels: %u read time: %.6fms', (index + 1), diff, len(self.channels), self.ina3221._channel_read_time / 1000000)
+                                            self.energy[index]['t'] = ts
+
+                                        if t>self.energy['stored'] + min(30, AppConfig.store_energy_interval): # limited to >=30 seconds
+                                            self.energy['stored'] = t;
+                                            self._scheduler.enter(1.0, Enums.SCHEDULER_PRIO.STORE_ENERGY, self.store_energy)
 
                                 self.data[1][index][0].append(loadvoltage)
                                 self.data[1][index][1].append(current)
                                 self.data[1][index][2].append(power)
-
-                                if t>self.energy['stored'] + min(30, AppConfig.store_energy_interval): # limited to >=30 seconds
-                                    self.energy['stored'] = t;
-                                    self._scheduler.enter(1.0, Enums.SCHEDULER_PRIO.STORE_ENERGY, self.store_energy)
 
                         finally:
                             self._data_lock.release()
@@ -223,10 +245,13 @@ class Sensor(Mqtt.Mqtt):
                             except:
                                 try:
                                     t = tmp[index]
-                                    data['ei'] = float(t['ei'])
-                                    data['ep'] = float(t['ep'])
                                 except:
                                     pass
+                            try:
+                                data['ei'] = float(t['ei'])
+                                data['ep'] = float(t['ep'])
+                            except:
+                                pass
                         self._data_lock.acquire()
                         try:
                             self.energy.update(energy)
@@ -334,9 +359,6 @@ class Sensor(Mqtt.Mqtt):
                 #     n = min(n, len(self.values[index].U), len(self.values[index].I), len(self.values[index].P))
 
                 # self._ax_data[0].datax = np.array(self.values._t)
-
-
-
 
 
 

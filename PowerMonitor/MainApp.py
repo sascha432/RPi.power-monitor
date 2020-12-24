@@ -156,9 +156,9 @@ class MainAppCli(Plot.Plot):
             self.stats[name] = 0
         self.stats[name] += value
 
-    def reset_values(self):
+    def reset_values(self, lock=True):
         self.debug(__name__, 'reset values')
-        if not self._data_lock.acquire(True, 5.0):
+        if lock and not self._data_lock.acquire(True, 5.0):
             self.error(__name__, 'reset_values could not acquire lock')
             return
         try:
@@ -177,7 +177,8 @@ class MainAppCli(Plot.Plot):
             if self._animation.active:
                 self._animation.reset()
         finally:
-            self._data_lock.release()
+            if lock:
+                self._data_lock.release()
 
     def reset_plot(self):
         try:
@@ -330,7 +331,7 @@ class MainApp(MainAppCli):
         self._fonts = namedtuple('GuiFonts', ['top_font', 'debug_font', 'label_font'])
         self._fonts.top_font = font.Font(family='Helvetica', size=20)
         self._fonts.debug_font = font.Font(family='Helvetica', size=10)
-        label_font_size = (32, 28, 24)
+        label_font_size = (32, 28, 22)
         self._fonts.label_font = font.Font(family='Helvetica', size=label_font_size[len(self.channels) - 1])
 
     def set_screen_update_rate(self, running=True):

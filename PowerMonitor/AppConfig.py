@@ -149,6 +149,7 @@ class KeyBindings(Base):
     reload_gui_config = ('<Alt-F5>', (str,))
     reload_config = ('<Control-F5>', (str,))
     reset_plot = ('<Control-F10>', (str,))
+    raw_sensor_values = ('<Control-r>', (str,))
     menu = ('<F1>', (str,))
     quit = ('<Alt-F4>', (str,))
 

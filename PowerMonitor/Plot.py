@@ -459,10 +459,11 @@ class Plot(Sensor.Sensor):
                     line, = ax.plot(values, values, color=channel._color_for('U'), label=channel.name + ' U', linewidth=AppConfig.plot.line_width)
                     self._ax_data[idx + 1].lines = [line]
 
-                    if channel.y_limits.voltage_max!=None:
-                        ax.set_ylim(top=channel.y_limits.voltage_max)
-                    if channel.y_limits.voltage_min!=None:
-                        ax.set_ylim(bottom=channel.y_limits.voltage_min)
+                    if not self._raw_values:
+                        if channel.y_limits.voltage_max!=None:
+                            ax.set_ylim(top=channel.y_limits.voltage_max)
+                        if channel.y_limits.voltage_min!=None:
+                            ax.set_ylim(bottom=channel.y_limits.voltage_min)
 
             self.add_ticks()
 
@@ -575,11 +576,11 @@ class Plot(Sensor.Sensor):
                     min_val = np.amin(values)
 
                     # limits per channel
-                    if channel.y_limits.voltage_max==None:
+                    if self._raw_values or channel.y_limits.voltage_max==None:
                         y_max1 = round(max_val * AppConfig.plot.voltage_top_margin, 2)
                     else:
                         y_max1 = channel.y_limits.voltage_max
-                    if channel.y_limits.voltage_min==None:
+                    if self._raw_values or channel.y_limits.voltage_min==None:
                         y_min1 = round(min_val * AppConfig.plot.voltage_bottom_margin, 2)
                     else:
                         y_min1 = channel.y_limits.voltage_min
@@ -594,11 +595,22 @@ class Plot(Sensor.Sensor):
                 xpos = x_max - max(1.0, AppConfig.plot.display_top_values_mean_time)
                 avg_idx = np.searchsorted(data.time, xpos)
 
-                self.labels[idx]['U'].configure(text=fmt.format(np.mean(data.channels[idx].U[avg_idx:]), 'V'))
-                self.labels[idx]['I'].configure(text=fmt.format(np.mean(data.channels[idx].I[avg_idx:]), 'A'))
-                self.labels[idx]['P'].configure(text=fmt.format(np.mean(data.channels[idx].P[avg_idx:]), 'W'))
-                tmp = self._gui_config.plot_display_energy==DISPLAY_ENERGY.AH and ('ei', 'Ah') or ('ep', 'Wh')
-                self.labels[idx]['e'].configure(text=fmt.format(self.energy[idx][tmp[0]], tmp[1]))
+                if self._raw_values:
+                    labelU_text = round(np.mean(data.channels[idx].U[avg_idx:]), 1)
+                    labelI_text = round(np.mean(data.channels[idx].I[avg_idx:]), 1)
+                    labelP_text = '%.2E' % round(np.mean(data.channels[idx].P[avg_idx:]), 1)
+                    labelE_text = ''
+                else:
+                    labelU_text = fmt.format(np.mean(data.channels[idx].U[avg_idx:]), 'V')
+                    labelI_text = fmt.format(np.mean(data.channels[idx].I[avg_idx:]), 'A')
+                    labelP_text = fmt.format(np.mean(data.channels[idx].P[avg_idx:]), 'W')
+                    tmp = self._gui_config.plot_display_energy==DISPLAY_ENERGY.AH and ('ei', 'Ah') or ('ep', 'Wh')
+                    labelE_text = fmt.format(self.energy[idx][tmp[0]], tmp[1])
+
+                self.labels[idx]['U'].configure(text=labelU_text)
+                self.labels[idx]['I'].configure(text=labelI_text)
+                self.labels[idx]['P'].configure(text=labelP_text)
+                self.labels[idx]['e'].configure(text=labelE_text)
 
             # ---------------------------------------------------------------------------------------
 

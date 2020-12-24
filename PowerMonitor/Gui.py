@@ -168,6 +168,8 @@ class Gui(tk.Tk):
             pass
         elif func==Enums.KEY_BINDINGS.QUIT:
             self.destroy()
+        elif func==Enums.KEY_BINDINGS.RAW_SENSOR_VALUES:
+            self._parent.set_raw_values(not self._parent._raw_values)
         else:
             raise RuntimeError('invalid key binding: %s' % func)
 

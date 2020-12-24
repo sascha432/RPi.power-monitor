@@ -173,10 +173,30 @@ class Mqtt(Idle.Idle):
         self.client.connect(AppConfig.mqtt.host, port=AppConfig.mqtt.port, keepalive=AppConfig.mqtt.keepalive)
         self.client.loop_start()
 
+        raw_values = None
+
         while not self._mqtt_thread_state['quit']:
+            sleep_time = 5
             if not self.mqtt_connected or np.sum(self.averages[0])<3:
-                sleep_time = 5
+                # wait for connection and enough data
+                pass
+            elif self._raw_values:
+                # disable MQTT when raw values are displayed
+                raw_values = True
+            elif raw_values and not self._raw_values:
+                # wait 60 seconds after raw values have been disabled
+                sleep_time = 60
+                raw_values = False
+            elif raw_values==False:
+                # 60 seconnds are over, reset average and continue broadcasting
+                raw_values = None
+                self._data_lock.acquire()
+                try:
+                    self.reset_avg()
+                finally:
+                    self._data_lock.release()
             else:
+
                 sleep_time = AppConfig.mqtt.update_interval
                 tmp = None
                 self._data_lock.acquire()
