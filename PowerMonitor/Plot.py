@@ -284,10 +284,15 @@ class Plot(Sensor.Sensor):
         self._ax_data[0].ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(6, steps=[1,2,5,10]))
         self._ax_data[0].ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(self.update_y_ticks_primary))
 
-        n = len(self.channels) > 1 and 3 or 6
+        if self._gui_config.plot_visibility==PLOT_VISIBILITY.VOLTAGE:
+            n = 8
+        else:
+            n = len(self.channels) > 1 and 3 or 6
         for idx, channel in enumerate(self.channels):
-            self._ax_data[idx + 1].ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(n))
-            self._ax_data[idx + 1].ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(self.update_y_ticks_secondary))
+            ax = self._ax_data[idx + 1].ax
+            ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(n))
+            ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(self.update_y_ticks_secondary))
+            ax.xaxis.set_major_formatter(matplotlib.ticker.NullFormatter())
 
         steps = (5, 10, 15, 30, 60, 120, 300, 900, 1800, 3600)
         step_size = None
@@ -449,9 +454,15 @@ class Plot(Sensor.Sensor):
             # secondary plots, voltage per axis
             if self._gui_config.plot_visibility in(PLOT_VISIBILITY.VOLTAGE, PLOT_VISIBILITY.BOTH):
                 for idx, channel in enumerate(self.channels):
-                    self._ax_data[idx + 1].hline = self._ax_data[idx + 1].ax.axhline(channel.voltage, color=channel._color_for('hline'), linewidth=AppConfig.plot.line_width, ls='dotted')
-                    line, = self._ax_data[idx + 1].ax.plot(values, values, color=channel._color_for('U'), label=channel.name + ' U', linewidth=AppConfig.plot.line_width)
+                    ax = self._ax_data[idx + 1].ax
+                    self._ax_data[idx + 1].hline = ax.axhline(channel.voltage, color=channel._color_for('hline'), linewidth=AppConfig.plot.line_width, ls='dotted')
+                    line, = ax.plot(values, values, color=channel._color_for('U'), label=channel.name + ' U', linewidth=AppConfig.plot.line_width)
                     self._ax_data[idx + 1].lines = [line]
+
+                    if channel.y_limits.voltage_max!=None:
+                        ax.set_ylim(top=channel.y_limits.voltage_max)
+                    if channel.y_limits.voltage_min!=None:
+                        ax.set_ylim(bottom=channel.y_limits.voltage_min)
 
             self.add_ticks()
 
@@ -564,8 +575,14 @@ class Plot(Sensor.Sensor):
                     min_val = np.amin(values)
 
                     # limits per channel
-                    y_max1 = round(max_val * AppConfig.plot.voltage_top_margin, 2)
-                    y_min1 = round(min_val * AppConfig.plot.voltage_bottom_margin, 2)
+                    if channel.y_limits.voltage_max==None:
+                        y_max1 = round(max_val * AppConfig.plot.voltage_top_margin, 2)
+                    else:
+                        y_max1 = channel.y_limits.voltage_max
+                    if channel.y_limits.voltage_min==None:
+                        y_min1 = round(min_val * AppConfig.plot.voltage_bottom_margin, 2)
+                    else:
+                        y_min1 = channel.y_limits.voltage_min
 
                     if self.y_limit_has_changed(idx + 1, y_min1, y_max1):
                         self._canvas_update_required = True

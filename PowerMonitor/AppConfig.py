@@ -29,6 +29,7 @@ class App(Base):
     headless = False
     verbose = False
     daemon = False
+    ignore_warnings = 0
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)
@@ -69,6 +70,26 @@ class Channel(ItemBase):
             return self.hline_color
         return self.color
 
+class YLimits(Base):
+
+    def __init__(self):
+        Base.__init__(self, {})
+
+    # fixed y limits for the channel and margins are ignored
+    # if the value exceeds the limit, the plot will cut it off at the fixed limit
+    voltage_max = (None, (float, int, None,))
+    voltage_min = (None, (float, int, None,))
+
+    # TODO
+    # keep max. voltage limit until changing the view or restarting
+    voltage_keep_max  = (False, (bool,))
+    voltage_keep_min = (False, (bool,))
+
+    # TODO
+    current_max = (None, (float, int, None,))
+    current_min = (None, (float, int, None,))
+    power_max = (None, (float, int, None,))
+    power_min = (None, (float, int, None,))
 
 class Plot(Base):
     refresh_interval = TimeConverter.value(250, 'ms')
