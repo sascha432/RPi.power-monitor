@@ -32,21 +32,44 @@ class Type:
 
     # types             type, list or tuple of types
     # converter         callable type to string converter
-    def __init__(self, types=(), converter=type_name):
-        if isinstance(types, tuple):
+    def __init__(self, types=((),), converter=type_name):
+        if types==None:
+            self._types = ((),)
+        elif isinstance(types, tuple):
             self._types = types
         elif isinstance(types, list):
             self._types = (*types,)
-        else:
+        elif isinstance(types, type):
             self._types = (types,)
+        else:
+            raise TypeError('Type() invalid types: %s' % str(types))
         for t in self._types:
             if t!=None and not isinstance(t, type):
-                raise TypeError('expected type: %s: %s' % (type(t), t))
+                raise TypeError('types list contains invalid type: type=%s obj=%s' % (type(t), t))
         self._converter = converter
         if not callable(self._converter):
             raise TypeError('converter not callable: %s' % type(converter))
 
+    @property
+    def empty(self):
+        return len(self) == 0
+
+    @property
+    def readonly(self):
+        from .Param import Param
+        return Param.ReadOnly in self._types
+
+    def __len__(self):
+        if self._types==None:
+            return 0
+        if isinstance(self._types, tuple):
+            return len(self._types)
+        raise TypeError('_types not tuple. %s' % (Type.name(self._types)))
+
     def __eq__(self, arg):
+        raise RuntimeError('type == Type() not allowed. use type in type_obj or type_obj.empty')
+
+    def __contains__(self, arg):
         return arg in self._types
 
     def __str__(self):
@@ -71,6 +94,24 @@ class Type:
         if fmt==None:
             return parts
         return fmt % sep.join(parts)
+
+    # converter types into Type object or returned passed object
+    #
+    # types         object, type, None, tuple/list of types or Type object
+    #
+    #               object will create a Type object with type(object)
+    #               None will create a Type object that is empty
+    #               use a tuple (None,) to actually create a Type object with None as allowed type
+    def normalize(types):
+        if isinstance(types, Type):
+            return types
+        if types==None:
+            return Type()
+        if isinstance(types, (list, tuple)):
+            return Type(types)
+        elif isinstance(types, type):
+            return Type((types,))
+        return Type((type(types),))
 
     def name(arg):
         if arg==None:

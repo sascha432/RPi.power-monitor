@@ -35,14 +35,9 @@ class Param(object):
         if isinstance(default, Param):
             raise RuntimeError('value must not be type Param')
         self._name = name
-        if callable(default) and (types==None or len(types)==0):
-            # types will be set when resolving default value
-            self._types = None
-        else:
-            if isinstance(types, Type):
-                self._types = types
-            else:
-                self._types = Type(types)
+        self._types = Type.normalize(types)
+        if not callable(default) and self._types.empty:
+            raise RuntimeError('Param name=%s has no types: types=%s' % (name, types))
         self._default = default
         self._converter = converter
         self._is_default = True
@@ -112,8 +107,8 @@ class Param(object):
         return 'name=%s %s %s types=%s' % (self.name, value, default, self.types)
 
     def prepare_value(self, value, any_type=False):
-        if any_type==False and not type(value)==self._types:
-            if not isinstance(value, int) or float!=self.types:
+        if any_type==False and not type(value) in (self._types):
+            if not isinstance(value, int) or not float in (self.types):
                 raise TypeError('type %s not allowed: %s: %s' % (Type.name(value), self.types, self.name))
             # convert int to float
             value = float(value)
@@ -131,56 +126,48 @@ class Param(object):
         return self._converter.convert(value, self)
 
     def is_type_allowed(self, value):
-        if Param.ReadOnly==self.types:
+        if self.types.readonly:
             return False
         if isinstance(self._default, Enum) and self._converter==None:
             from .Converter import EnumConverter
             self._converter = EnumConverter(type(self._default))
             self._types = Type((str, int, float, type(self._default)))
 
-        if isinstance(value, int) and float==self.types:
+        if isinstance(value, int) and float in (self.types):
             return True
-        return type(value)==self.types
+        return type(value) in (self.types)
 
     def validate_type(self, value):
-        if Param.ReadOnly==self.types:
+        if self.types.readonly:
             return False
-        if value==self.types:
+        if value in (self.types):
             raise TypeError('allowed types: %s' % self.types)
-
-    # def convert_value(self, value, converter):
-    #     if isinstance(self._converter, Converter):
-    #         return self._converter.convert(value, self)
-    #     self.validate_type(value)
-    #     if callable(converter):
-    #         return converter(value)
-    #     return value
 
     def finalize(self, path):
         if callable(self.default):
             self._default = self.default(path)
-        if self.types==None:
-            self._types = Type(type(self.default))
+        if self._types.empty:
+            self._types = Type.normalize(self.default)
 
     #
     # create Param object
     #
+    # obj       object to assign the parameter to
     # value     tuple, Param or value
-    # path      path of the parameter
+    # name      name of the parameter
     #
-    #   default value     allowed types will be set to type of default value
+    #   default value                           allowed types will be set to type of default value
     #   (default value, (types,))
-    #   (default value, (types,), converter)
-    #       converter can be a list, range, callable or Converter object to convert and/or validate the value
+    #   (default value, (types,), converter)    converter can be a list, range, callable or Converter object to convert and/or validate the value
     #
-    # if default value is callable, it will be called to get the default value
-    # the argument is path
+    # if default value is callable, it will be called to get the default value after the parameter has been created and assigned to the object
     #
-    def create_instance(obj, value):
+    @staticmethod
+    def create_instance(obj, value, name=None):
         if isinstance(value, Param):
-            return copy.deepcopy(value)
+            return Param._assign_to_object(obj, name, copy.deepcopy(value))
         if isinstance(value, tuple) and isinstance(value[0], Param):
-            return copy.deepcopy(value[0])
+            return Param._assign_to_object(obj, name, copy.deepcopy(value[0]))
 
         if not isinstance(value, tuple):
             types = (type(value),)
@@ -191,9 +178,9 @@ class Param(object):
 
         if isinstance(converter, (tuple, list)) and len(converter)==2 and callable(converter[0]):
             if isinstance(converter[1], (tuple, list)):
-                return converter[0].__call__(*converter[1])
+                return Param._assign_to_object(obj, name, converter[0].__call__(*converter[1]))
             else:
-                return converter[0].__call__(converter[1])
+                return Param._assign_to_object(obj, name, converter[0].__call__(converter[1]))
 
         if callable(converter):
             if not hasattr(sys.modules[__name__], 'Converter'):
@@ -201,4 +188,12 @@ class Param(object):
             if isinstance(converter.__class__, Converter): # static method
                 converter = Converter.create_instance(converter)
 
-        return Param(value, types, converter)
+        return Param._assign_to_object(obj, name, Param(value, types, converter))
+
+
+    @staticmethod
+    def _assign_to_object(obj, name, param):
+        if name==None:
+            raise ValueError('Param.name is None: path=%s' % (obj._path))
+        obj._set_param(name, param)
+        return param

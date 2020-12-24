@@ -2,6 +2,10 @@
 # Author: sascha_lammers@gmx.de
 #
 
+#
+# Reader class that reads the configuration from a source and validates it against the passed configuration tree
+#
+
 from . import ObjectWriter
 from . import (Path, Parts)
 from . import Index

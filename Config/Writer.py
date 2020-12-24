@@ -2,6 +2,10 @@
 # Author: sascha_lammers@gmx.de
 #
 
+#
+# Write class that creates an object or outputs the configuration tree
+#
+
 from . import Type
 from . import Index
 from . import Path

@@ -2,11 +2,14 @@
 # Author: sascha_lammers@gmx.de
 #
 
+#
+# Loader class that creates the configuration tree and loads all parameters
+# Merger class that validates and merges parts or the entire configuration with defaults, using any Reader object as source
+#
+
 from . import (Root, Base, ListBase)
-from . import (DictType, RangeType)
-from . import Path
-from . import Type
-from . import Param
+from . import DictType, RangeType, Path
+from . import Type, Param
 import copy
 
 class Loader(object):
@@ -40,14 +43,14 @@ class Loader(object):
             try:
                 if obj._is_key_valid(name) and hasattr(obj, name):
                     value = getattr(obj, name)
-                    param = Param.create_instance(obj, value)
-                    if param!=None:
-                        if self._debug:
-                            self._debug('_set_param(attr) name=%s item=%s parent=%s path=%s default=%s types=%s ' % (name, Type.name(obj), Type.name(obj), obj._path + name, param.default, param.types))
-                        obj._set_param(name, param)
+                    param = Param.create_instance(obj, value, name)
+                    if param==None:
+                        raise ValueError('Param.create_instance() returned None: path=%s name=%s' % (obj._path, name))
+                    if self._debug:
+                        self._debug('_set_param(attr) name=%s item=%s parent=%s path=%s default=%s types=%s ' % (name, Type.name(obj), Type.name(obj), obj._path + name, param.default, param.types))
             except Exception as e:
                 # add more info
-                raise RuntimeError('type=%s path=%s\n%s' % (Type.name(obj), obj._path + name, e))
+                raise RuntimeError('type=%s path=%s\n%s: %s' % (Type.name(obj), obj._path + name, Type.name(e), e))
 
             if self._debug and param==None and obj._is_key_valid(name):
                 raise RuntimeError('param==None path=%s hasattr=%s' % (obj._path + name, hasattr(obj, name)))

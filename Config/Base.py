@@ -46,10 +46,10 @@ class Base(object):
         return self._params[path_name]
 
     # set Param object
-    def _set_param(self, path_name, param):
-        param.name = path_name
+    def _set_param(self, name, param):
+        param.name = name
         param.finalize(self._path)
-        self._params[path_name] = param
+        self._params[name] = param
 
     def _get_children(self):
         if hasattr(self, '_children'):
