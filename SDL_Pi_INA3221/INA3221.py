@@ -316,7 +316,7 @@ if 'win' in sys.platform:
 
         def _getBusVoltage_raw(self, channel):
             l = 4000
-            u = 5000
+            u = 8000
             if random.randint(0, 100)==0:
                 l -= random.randint(0, 3000)
             if random.randint(0, 100)==1:
