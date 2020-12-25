@@ -96,8 +96,11 @@ class Sensor(Mqtt.Mqtt):
     #     self.ina3221.settings(INA3211_CONFIG.ENABLE_ALL_CHANNELS, avg, AppConfig.ina3221.vbus_conversion_time, AppConfig.ina3221.vshunt_conversion_time)
 
     def reset_data(self):
-        self.data = [[], [ [[], [], []], [[], [], []], [[], [], []] ]]
-        # self.data = [[], [[[]]*3]*3]
+        # do not store data for GUI in headless mode
+        if AppConfig.headless:
+            self.data = None
+        else:
+            self.data = [[], [ [[], [], []], [[], [], []], [[], [], []] ]]
 
     def read_sensor_thread_handler(self, notification):
         self.debug(__name__, 'cmd=%s data=%s', notification.data.cmd, notification.data)
@@ -151,10 +154,10 @@ class Sensor(Mqtt.Mqtt):
                         diff_limit = self.ina3221._channel_read_time * len(self.channels) * 3
                         self._data_lock.acquire()
                         try:
-                            self.data[0].append(t)
+                            if self.data:
+                                self.data[0].append(t)
 
                             for index, (loadvoltage, current, power, ts) in enumerate(tmp):
-                                #(loadvoltage, current, power, ts) = data
 
                                 if not self._raw_values:
                                     self.averages[0][index] += 1
@@ -162,9 +165,9 @@ class Sensor(Mqtt.Mqtt):
                                     self.averages[2][index] += current
                                     self.averages[3][index] += power
 
-                                    self.add_stats_minmax('ch%u_U' % index, loadvoltage)
-                                    self.add_stats_minmax('ch%u_I' % index, current)
-                                    self.add_stats_minmax('ch%u_P' % index, power)
+                                    # self.add_stats_minmax('ch%u_U' % index, loadvoltage)
+                                    # self.add_stats_minmax('ch%u_I' % index, current)
+                                    # self.add_stats_minmax('ch%u_P' % index, power)
 
                                     if self.ina3221._channel_read_time>=Sensor.ENERGY_MIN_READTIME:
                                         if self.energy[index]['t']==0 or ts==0:
@@ -184,9 +187,11 @@ class Sensor(Mqtt.Mqtt):
                                             self.energy['stored'] = t;
                                             self._scheduler.enter(1.0, Enums.SCHEDULER_PRIO.STORE_ENERGY, self.store_energy)
 
-                                self.data[1][index][0].append(loadvoltage)
-                                self.data[1][index][1].append(current)
-                                self.data[1][index][2].append(power)
+
+                                if self.data:
+                                    self.data[1][index][0].append(loadvoltage)
+                                    self.data[1][index][1].append(current)
+                                    self.data[1][index][2].append(power)
 
                         finally:
                             self._data_lock.release()
@@ -194,7 +199,6 @@ class Sensor(Mqtt.Mqtt):
                         if self._gui and self._animation.mode==Animation.Mode.NONE:
                             self.debug(__name__, 'starting animation from sensor')
                             self._animation.schedule()
-
 
                         # self.debug(__name__, 'sensor items %u', len(self.data[0]))
 
@@ -347,20 +351,6 @@ class Sensor(Mqtt.Mqtt):
                     self.values[index].U = self.values[index].U[0:minl]
                     self.values[index].I = self.values[index].I[0:minl]
                     self.values[index].P = self.values[index].P[0:minl]
-
-            # t2 = time.monotonic()
-
-            # print('%d %d %d time=%.3f' % (len(tmp), minl, maxl, (t2 - t) * 1000))
-
-                # np.array()
-
-                # n = len(self.values._t)
-                # for index, channel in enumerate(self.channels):
-                #     n = min(n, len(self.values[index].U), len(self.values[index].I), len(self.values[index].P))
-
-                # self._ax_data[0].datax = np.array(self.values._t)
-
-
 
             return True
         except Exception as e:
