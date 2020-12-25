@@ -15,6 +15,7 @@ import copy
 import json
 import copy
 import random
+import sqlite3
 
 INA3211_CONFIG = SDL_Pi_INA3221.INA3211_CONFIG
 
@@ -79,21 +80,24 @@ class Sensor(Mqtt.Mqtt):
         self._read_sensor_thread_listener = EventManager.Listener('read_sensor', self._event)
         self.thread_daemonize(__name__, self.read_sensor_thread)
 
+    def init_database(self):
+        try:
+            cur = self._conn.cursor()
+            cur.execute('CREATE TABLE IF NOT EXISTS energy ( \
+                channel_id TINYINT, \
+                energy_Ah REAL, \
+                energy_Wh REAL, \
+                updated_ts INTEGER, \
+                PRIMARY KEY (updated_ts, channel_id) \
+            )')
+        except Exception as e:
+            raise RuntimeError("Failed to create table: %s" % e)
+
     def init_vars(self):
         self.debug(__name__, 'init_vars')
         self._time_scale_num = 0
         self.ina3221._calibration = ChannelCalibration(AppConfig)
         self.reset_data()
-
-    # def change_averaging_mode(self, time):
-    #
-    #     avg = AppConfig.ina3221.averaging_mode
-    #     if time<10:
-    #         avg = INA3211_CONFIG.AVERAGING_MODE.x1
-    #     elif time<30:
-    #         avg = INA3211_CONFIG.AVERAGING_MODE.x4
-    #
-    #     self.ina3221.settings(INA3211_CONFIG.ENABLE_ALL_CHANNELS, avg, AppConfig.ina3221.vbus_conversion_time, AppConfig.ina3221.vshunt_conversion_time)
 
     def reset_data(self):
         # do not store data for GUI in headless mode
@@ -111,6 +115,17 @@ class Sensor(Mqtt.Mqtt):
     def read_sensor_thread(self):
         self.thread_register(__name__)
         self.info(__name__, 'sensor read interval %.2fms' % (self.ina3221._channel_read_time * 1000))
+
+        try:
+            file = AppConfig.get_filename(AppConfig.database_file)
+            self._conn = sqlite3.connect(file)
+        except Exception as e:
+            msg = 'Cannot open database: %s: %s' % (file, e)
+            self.error(__name__, msg)
+            raise RuntimeError(msg)
+        self.init_database()
+        self.db_load_energy()
+
         try:
             while not self._read_sensor_thread_state['quit']:
 
@@ -185,7 +200,7 @@ class Sensor(Mqtt.Mqtt):
 
                                         if t>self.energy['stored'] + min(30, AppConfig.store_energy_interval): # limited to >=30 seconds
                                             self.energy['stored'] = t;
-                                            self._scheduler.enter(1.0, Enums.SCHEDULER_PRIO.STORE_ENERGY, self.store_energy)
+                                            self.db_store_energy()
 
 
                                 if self.data:
@@ -225,70 +240,48 @@ class Sensor(Mqtt.Mqtt):
             self.error(__name__, str(e))
             AppConfig._debug_exception(e)
 
+        self.db_store_energy()
+        if self._conn:
+            self._conn.close()
+            self._conn = None
+
         self.thread_register(__name__)
 
 
-    def load_energy(self):
-        files = [AppConfig.get_filename(AppConfig.energy_storage_file)]
-        if AppConfig.energy_storage_num_backups>0:
-            for i in range(0, AppConfig.energy_storage_num_backups):
-                files.append('%s.%u.bak' % (files[0], i))
+    def db_load_energy(self):
         try:
-            e = None
-            for file in files:
-                try:
-                    with open(AppConfig.get_filename(AppConfig.energy_storage_file), 'r') as f:
-                        tmp = json.loads(f.read())
-                        self.reset_energy()
-                        energy = {}
-                        for index, channel in enumerate(AppConfig.channels):
-                            data = {'ei': 0, 'ep': 0, 't': 0}
-                            energy[index] = data
-                            try:
-                                t = tmp[str(index)]
-                            except:
-                                try:
-                                    t = tmp[index]
-                                except:
-                                    pass
-                            try:
-                                data['ei'] = float(t['ei'])
-                                data['ep'] = float(t['ep'])
-                            except:
-                                pass
-                        self._data_lock.acquire()
-                        try:
-                            self.energy.update(energy)
-                        finally:
-                            self._data_lock.release()
-                except Exception as e:
-                    pass
-            if e!=None:
-                raise e
+            tmp = {}
+            self.reset_energy()
+            cur = self._conn.cursor()
+            for row in cur.execute('SELECT * FROM energy ORDER BY updated_ts DESC,channel_id ASC LIMIT 3'):
+                tmp[row[0]] = {
+                    'ei': row[1],
+                    'ep': row[2],
+                    't': 0
+                }
+
+            self.debug(__name__, 'loaded energy from database: %s' % tmp)
+            self.energy.update(tmp)
+
         except Exception as e:
-            self.error(__name__, 'failed to load energy: %s: %s', e, files)
+            self.error(__name__, 'failed to load energy: %s', e)
             self.reset_energy()
 
-    def store_energy(self):
-        file = AppConfig.get_filename(AppConfig.energy_storage_file)
-        self._data_lock.acquire()
-        try:
-            tmp = copy.deepcopy(self.energy)
-        finally:
-            self._data_lock.release()
-        for key, val in tmp.items():
-            if isinstance(val, dict) and 't' in val:
-                del val['t']
-        try:
-            with open(file, 'w') as f:
-                f.write(json.dumps(tmp))
 
-            if AppConfig.energy_storage_num_backups>0:
-                shutil.copyfile(file, '%s.%u.bak' % (file, self._energy_backp_file_num))
-                self._energy_backp_file_num += 1
-                self._energy_backp_file_num %= AppConfig.energy_storage_num_backups
+    def db_store_energy(self, lock=True):
+        values = []
+        timestamp = time.time()
+        for channel, data in self.energy.items():
+            if isinstance(data, dict):
+                values.append('(%u, %.16f, %.16f, %u)' % (channel, data['ei'], data['ep'], timestamp))
+        statement = 'INSERT INTO energy VALUES %s' % (','.join(values))
+        self.debug(__name__, statement)
+        try:
+            cur = self._conn.cursor()
+            cur.execute(statement)
+            self._conn.commit()
         except Exception as e:
-            self.error(__name__, 'failed to store energy: %s: %s', file, e)
+            self.error(__name__, 'failed to store energy in database: %s: %s', statement, e)
 
     def reset_avg(self):
         self.averages = np.zeros((4, 3))
