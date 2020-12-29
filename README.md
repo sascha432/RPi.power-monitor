@@ -86,7 +86,7 @@ If there is any issues reading the sensor, there is a 5 second pause before it i
 
 How to get solid readings
 
-- Check for loose connections first, something this happens when it warms up
+- Check for loose connections first, sometimes this happens when it warms up
 - Moving the wires away from anything that can cause interferences
 - Shielding the I2C bus wires
 - Adding additional pullup resistors to the bus
