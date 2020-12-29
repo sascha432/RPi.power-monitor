@@ -47,7 +47,7 @@ Tested with Python 3.7.8 on windows and Python 3.7.3 on debian (armv7l)
 ### Windows limitations
 
 An adapter to read the sensor via I2C is required. Reading data over WiFi using an ESP8266 is possible, but currently not implemented.
-The INA3221 class is generating random value to run and debug it on Windows
+The INA3221 class is generating random values to run and debug it on Windows
 
 ## Launching power monitor
 
