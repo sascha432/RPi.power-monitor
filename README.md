@@ -80,6 +80,18 @@ The desired parameters can be copied to config.json and modified.
 
 The energy is stored once per minute in sqlite3 in `$HOME/.power_monitor/powermonitor.db`
 
+### Sensor read errors/recovery
+
+If there is any issues reading the sensor, there is a 5 second pause before it is reset and any further attempt reading it is made.
+
+How to get solid readings
+
+- Check for loose connections first, something this happens when it warms up
+- Moving the wires away from anything that can cause interferences
+- Shielding the I2C bus wires
+- Adding additional pullup resistors to the bus
+- Reducing the data rate of the bus
+
 ### Running with GUI
 
 Set the DISPLAY environment variable before starting the monitor or pass the display with `--display=:0`
