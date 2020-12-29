@@ -43,6 +43,7 @@ if args.print:
     args.check = True
 
 AppConfig.Mqtt.device_name = socket.gethostname()
+AppConfig.Influxdb.tags_host = socket.gethostname()
 AppConfig.config_dir = args.config_dir
 
 try:

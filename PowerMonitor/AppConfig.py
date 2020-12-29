@@ -7,6 +7,7 @@ from SDL_Pi_INA3221 import INA3211_CONFIG
 from Config import (Type, Path, Param, DictType, TimeConverter, MarginConverter, RangeConverter, ListConverter, EnumConverter, Base, ListBase, ItemBase)
 from . import Enums
 from .Gui import Gui
+import socket
 
 class App(Base):
 
@@ -178,13 +179,14 @@ class Influxdb(Base):
     username = 'root'
     password = 'root'
     database = 'ina3221'
+    tags_host = socket.gethostname()
 
     def __init__(self, struct={}):
         Base.__init__(self, struct)
 
 class Mqtt(Base):
 
-    device_name = 'PowerMonitor'
+    device_name = socket.gethostname()
     sensor_name = 'INA3221'
 
     host = (None, (str,))

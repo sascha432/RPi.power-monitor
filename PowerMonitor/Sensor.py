@@ -214,22 +214,7 @@ class Sensor(Mqtt.Mqtt):
                             self._data_lock.release()
 
                         if self.influx_client:
-                            influx_data = {
-                                'measurement': 'ina3221',
-                                'tags': {
-                                    'host': 'acidpi1'
-                                },
-                                'time': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.localtime()),
-                                'fields': {}
-                            }
-                            for index, (loadvoltage, current, power, ts) in enumerate(tmp):
-                                influx_data['ch%02u_U' % index] = loadvoltage
-                                influx_data['ch%02u_I' % index] = current
-                                influx_data['ch%02u_P' % index] = power
-
-                            # print(json.dumps(influx_data))
-                            self.influx_client.write_points(json.dumps(influx_data))
-
+                            self.influxdb_push_data(tmp)
 
                         if self._gui and self._animation.mode==Animation.Mode.NONE:
                             self.debug(__name__, 'starting animation from sensor')
