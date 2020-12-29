@@ -42,7 +42,6 @@ class BaseApp(object):
         self._data_lock = threading.Lock()
         self._plot_lock = threading.Lock()
 
-
         self._animation = Animation(self, AppConfig)
 
         # lock for creating threads

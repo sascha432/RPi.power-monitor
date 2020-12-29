@@ -59,7 +59,6 @@
             "plot_visibility": "<F2>",
             "quit": "<Alt-F4>",
             "reload_config": "<Control-F5>",
-            "reload_gui_config": "<Alt-F5>",
             "reset_plot": "<Control-F10>",
             "toggle_debug": "<Control-F9>",
             "toggle_fullscreen": "<F11>"

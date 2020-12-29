@@ -31,6 +31,7 @@ class Config:
                 'key_bindings' : AppConfig.KeyBindings()
             }),
             'mqtt': AppConfig.Mqtt(),
+            'influxdb': AppConfig.Influxdb(),
             'ina3221': AppConfig.Ina3221(),
         })))
         self._loader = loader

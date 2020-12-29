@@ -7,6 +7,13 @@
 	"settings": {
 		"files.associations": {
 			"*.json": "jsonc"
-		}
+		},
+		"python.analysis.logLevel": "Warning",
+		"python.autoComplete.extraPaths": [
+			"${workspaceFolder}/PowerMonitor",
+			"${workspaceFolder}/Config",
+			"${workspaceFolder}/EventManager",
+			"${workspaceFolder}/SDL_Pi_INA3221"
+		]
 	}
 }

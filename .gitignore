@@ -1,2 +1,12 @@
 __pycache__/
-old/
+config.json
+config2.json
+test_cfg.py
+workspace.code-workspace
+.vscode/launch.json
+.vscode/settings.json
+config_state.json
+win/
+pm
+images/Thumbs.db
+.vscode/

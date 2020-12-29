@@ -14,8 +14,12 @@ class App(Base):
 
     config_dir = ('.', (Param.ReadOnly,))
     config_file = ('{config_dir}/config.json', (Param.ReadOnly,))
+
+    database_file = '{config_dir}/power_monitor.db'
+
     energy_storage_file = '{config_dir}/energy.json'
     energy_storage_num_backups = 3
+
     pid_file = '{config_dir}/power_monitor.pid'
 
     store_energy_interval = TimeConverter.value(60)
@@ -52,8 +56,8 @@ class Channel(ItemBase):
     index = (lambda path: path.index, (Param.ReadOnly,))
     enabled = False
     voltage = (None, (float))
-    color = ''
-    hline_color = ''
+    color = (None, (str,))
+    hline_color = (None, (str,))
 
     COLOR_AGGREGATED_POWER = 'red'
 
@@ -142,15 +146,15 @@ class KeyBindings(Base):
 
     toggle_fullscreen = ('<F11>', (str,))
     end_fullscreen = ('<Escape>', (str,))
+    menu = ('<F1>', (str,))
     plot_visibility = ('<F2>', (str,))
     plot_primary_display = ('<F3>', (str,))
     plot_display_energy= ('<F4>', (str,))
+    toggle_channel = ('<F5>', (str,))
     toggle_debug = ('<Control-F9>', (str,))
-    reload_gui_config = ('<Alt-F5>', (str,))
-    reload_config = ('<Control-F5>', (str,))
+    reload_config = ('<F11>', (str,))
     reset_plot = ('<Control-F10>', (str,))
     raw_sensor_values = ('<Control-r>', (str,))
-    menu = ('<F1>', (str,))
     quit = ('<Alt-F4>', (str,))
 
     def __init__(self, struct={}):
@@ -167,6 +171,17 @@ class Ina3221(Base):
     def __init__(self, struct={}):
         Base.__init__(self, struct)
 
+class Influxdb(Base):
+
+    host = (None, (str,))
+    port = RangeConverter.value(8086, range(0, 65535), (int,)),
+    username = 'root'
+    password = 'root'
+    database = 'ina3221'
+
+    def __init__(self, struct={}):
+        Base.__init__(self, struct)
+
 class Mqtt(Base):
 
     device_name = 'PowerMonitor'
@@ -175,7 +190,7 @@ class Mqtt(Base):
     host = (None, (str,))
     port = RangeConverter.value(1883, range(0, 65535), (int,))
     keepalive = TimeConverter.value(60)
-    qos = ListConverter.value(2, [0, 1, 2], (int,))
+    qos = ListConverter.value(0, [0, 1, 2], (int,))
 
     topic_prefix = 'home'
     auto_discovery = True

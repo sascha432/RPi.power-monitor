@@ -63,9 +63,18 @@ class Plot(Sensor.Sensor):
         # init TK
         self._gui.configure(bg=self.BG_COLOR)
 
+        self.init_main_frame()
+
+    def reinit_main_frame(self):
+        self.main_frame.destroy()
+        self.init_main_frame()
+
+    def init_main_frame(self):
+
         top = tk.Frame(self._gui)
         top.pack(side=tkinter.TOP)
         top.place(relwidth=1.0, relheight=1.0)
+        self.main_frame = top
 
         # plot
         self.fig = Figure(figsize=(3, 3), dpi=self.geometry.dpi, tight_layout=True, facecolor=self.BG_COLOR)
@@ -77,7 +86,7 @@ class Plot(Sensor.Sensor):
         self._ax_data[-1].lines = []
 
         # axis 1-3
-        for channel in self.channels:
+        for channel in self.active_channels:
             ax = self.fig.add_subplot(self.get_plot_geometry(channel.number, PLOT_VISIBILITY.BOTH), facecolor=self.PLOT_BG, sharex=self._ax_data[0].ax)
             self._ax_data.append(namedtuple('AxisData%u' % len(self._ax_data), ('ax', 'background', 'lines', 'datay', 'hline')))
             self._ax_data[-1].ax = ax
@@ -87,18 +96,9 @@ class Plot(Sensor.Sensor):
 
         for data in self._ax_data:
             data.ax.grid(True, color=self.PLOT_GRID, axis='both', linewidth=AppConfig.plot.grid_line_width)
-            # data.ax.set_xticks([])
-            # data.ax.set_xticklabels([])
             data.ax.tick_params(**self.ticks_params())
-            # data.ax.ticklabel_format(axis='y', style='plain', useOffset=False)
             ax.autoscale(False)
             ax.margins(0, 0)
-
-        # # add before reconfigure_axis
-        # idx = 1
-        # for channel in enumerate(self.channels):
-        #     self._ax_data[idx].ax.ticklabel_format(axis='y', style='plain', useOffset=False)
-        #     idx += 1
 
         # lines
         self.reconfigure_axis()
@@ -112,9 +112,9 @@ class Plot(Sensor.Sensor):
             'anchor': 'center'
         }
 
-        if len(self.channels)==1:
+        if len(self.active_channels)==1:
             top_frame = { 'relx': 0.0, 'rely': 0.0, 'relwidth': 1.0, 'relheight': 0.12 }
-        elif len(self.channels)==2:
+        elif len(self.active_channels)==2:
             top_frame = { 'relx': 0.0, 'rely': 0.0, 'relwidth': 1.0, 'relheight': 0.17 }
         else:
             top_frame = { 'relx': 0.0, 'rely': 0.0, 'relwidth': 1.0, 'relheight': 0.17 }
@@ -126,12 +126,12 @@ class Plot(Sensor.Sensor):
         # self.canvas.get_tk_widget().pack()
 
         gui = {}
-        try:
-            with open(AppConfig.get_filename(self.get_gui_scheme_config_filename()), 'r') as f:
-                gui = json.loads(f.read())
-        except Exception as e:
-            self.debug(__name__, 'failed to read GUI config: %s', e)
-            gui = {}
+        # try:
+        #     with open(AppConfig.get_filename(self.get_gui_scheme_config_filename()), 'r') as f:
+        #         gui = json.loads(f.read())
+        # except Exception as e:
+        #     self.debug(__name__, 'failed to read GUI config: %s', e)
+        #     gui = {}
 
         gui['geometry'] = dict(self.geometry)
 
@@ -160,17 +160,17 @@ class Plot(Sensor.Sensor):
             places = []
             padx = 200
             pady = 200
-            if len(self.channels)==1:
+            if len(self.active_channels)==1:
                 # 1x 1 row 4 cols
                 cols = 4
                 rows = 1
                 num = 4
-            elif len(self.channels)==2:
+            elif len(self.active_channels)==2:
                 # 2x 2 rows 2 cols
                 cols = 2
                 rows = 2
                 num = 8
-            elif len(self.channels)==3:
+            elif len(self.active_channels)==3:
                 # 3x 2 rows 2 cols
                 cols = 2
                 rows = 2
@@ -193,7 +193,7 @@ class Plot(Sensor.Sensor):
             del item['padx']
             del item['pady']
 
-        for idx, channel in enumerate(self.channels):
+        for idx, channel in enumerate(self.active_channels):
             label_config['fg'] = channel.color
             # label_config['bg'] = 'yellow'
             label_config['bg'] = self.BG_COLOR
@@ -203,7 +203,7 @@ class Plot(Sensor.Sensor):
             frame = tk.Frame(self._gui, bg=frame_bgcolor)
             frame.pack()
             tmp = copy.copy(top_frame)
-            tmp['relwidth'] /= len(self.channels)
+            tmp['relwidth'] /= len(self.active_channels)
             tmp['relx'] += tmp['relwidth'] * idx
             frame.place(in_=top, **tmp)
 
@@ -259,11 +259,11 @@ class Plot(Sensor.Sensor):
             label.place(in_=top, relx=0.0, rely=1.0-0.135 + 2.0, relwidth=1.0, relheight=0.13)
             self.debug_label = label
             self.debug_label_state = 2
-        try:
-            with open(AppConfig.get_filename(self.get_gui_scheme_config_filename(True)), 'w') as f:
-                f.write(json.dumps(gui, indent=2))
-        except Exception as e:
-            self.debug(__name__, 'failed to write GUI config: %s', e)
+        # try:
+        #     with open(AppConfig.get_filename(self.get_gui_scheme_config_filename(True)), 'w') as f:
+        #         f.write(json.dumps(gui, indent=2))
+        # except Exception as e:
+        #     self.debug(__name__, 'failed to write GUI config: %s', e)
 
         self.canvas.get_tk_widget().bind('<Button-1>', self.button_1)
         self.canvas.draw()
@@ -286,13 +286,13 @@ class Plot(Sensor.Sensor):
 
         if self._gui_config.plot_visibility==PLOT_VISIBILITY.VOLTAGE:
             n = 6
-        elif len(self.channels)==1:
+        elif len(self.active_channels)==1:
             n = 6
-        elif len(self.channels)==2:
+        elif len(self.active_channels)==2:
             n = 3
         else:
             n = 2
-        for idx, channel in enumerate(self.channels):
+        for idx, channel in enumerate(self.active_channels):
             ax = self._ax_data[idx + 1].ax
             ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(n))
             ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(self.update_y_ticks_secondary))
@@ -330,9 +330,9 @@ class Plot(Sensor.Sensor):
                 return 111
         else:
             if visibility==PLOT_VISIBILITY.BOTH:
-                return (len(self.channels) * 100) + 20 + (plot_number * 2)
+                return (len(self.active_channels) * 100) + 20 + (plot_number * 2)
             if visibility==PLOT_VISIBILITY.VOLTAGE:
-                return 100 + (len(self.channels) * 10) + (plot_number)
+                return 100 + (len(self.active_channels) * 10) + (plot_number)
         return None
 
     def get_time_scale_list(self):
@@ -387,18 +387,20 @@ class Plot(Sensor.Sensor):
                         return (None, None, None)
                     return (self._ax_data[0].lines[0], self._data.P, self._ax_data[0].ax)
                 if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
-                    return (self._ax_data[0].lines[channel], self._data.channels[channel].I, self._ax_data[0].ax)
+                    if self.is_channel_active(channel):
+                        return (self._ax_data[0].lines[channel], self._data.channels[channel].I, self._ax_data[0].ax)
                 if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.POWER:
-                    return (self._ax_data[0].lines[channel], self._data.channels[channel].P, self._ax_data[0].ax)
+                    if self.is_channel_active(channel):
+                        return (self._ax_data[0].lines[channel], self._data.channels[channel].P, self._ax_data[0].ax)
 
         elif axis in (1, 2, 3) and self._gui_config.plot_visibility!=PLOT_VISIBILITY.PRIMARY:
-            return (self._ax_data[axis].lines[0], self._data.channels[channel].U, self._ax_data[axis].ax)
+            if self.is_channel_active(channel):
+                return (self._ax_data[axis].lines[0], self._data.channels[channel].U, self._ax_data[axis].ax)
 
         return (None, None, None)
 
     def set_plot_geometry(self):
-        idx = 0
-        for data in self._ax_data:
+        for idx, data in enumerate(self._ax_data):
             ax = data.ax
             n = self.get_plot_geometry(idx)
             self.debug(__name__, 'idx=%u visibility=%s get_plot_geometry=%s', idx, str(self._gui_config.plot_visibility), n)
@@ -407,7 +409,22 @@ class Plot(Sensor.Sensor):
                 ax.change_geometry(int(n / 100) % 10, int(n / 10) % 10, int(n) % 10)
             elif ax:
                 ax.set_visible(False)
-            idx += 1
+
+    @property
+    def active_channels(self):
+        channels = []
+        for index, active in enumerate(self._gui_config.plot_channels):
+            if active:
+                channels.append(self.channels[index])
+        return channels
+
+    def is_channel_active(self, channel):
+        try:
+            self.active_channels[channel]
+            return True
+        except:
+            pass
+        return False
 
     def reconfigure_axis(self):
         if not self._plot_lock.acquire(False):
@@ -444,10 +461,10 @@ class Plot(Sensor.Sensor):
             data = self._ax_data[0]
             if self._gui_config.plot_visibility in(PLOT_VISIBILITY.PRIMARY, PLOT_VISIBILITY.BOTH):
                 if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.AGGREGATED_POWER:
-                    line, = data.ax.plot(values, values, color=self.channels[0]._color_for('Psum'), label='Aggregated Power (W)', linewidth=AppConfig.plot.line_width)
+                    line, = data.ax.plot(values, values, color=self.active_channels[0]._color_for('Psum'), label='Aggregated Power (W)', linewidth=AppConfig.plot.line_width)
                     data.lines.append(line)
                 else:
-                    for idx, channel in enumerate(self.channels):
+                    for idx, channel in enumerate(self.active_channels):
                         if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
                             line, = data.ax.plot(values, values, color=channel._color_for('I'), label=channel.name + ' I', linewidth=AppConfig.plot.line_width)
                             data.lines.append(line)
@@ -457,7 +474,7 @@ class Plot(Sensor.Sensor):
 
             # secondary plots, voltage per axis
             if self._gui_config.plot_visibility in(PLOT_VISIBILITY.VOLTAGE, PLOT_VISIBILITY.BOTH):
-                for idx, channel in enumerate(self.channels):
+                for idx, channel in enumerate(self.active_channels):
                     ax = self._ax_data[idx + 1].ax
                     self._ax_data[idx + 1].hline = ax.axhline(channel.voltage, color=channel._color_for('hline'), linewidth=AppConfig.plot.line_width, ls='dotted')
                     line, = ax.plot(values, values, color=channel._color_for('U'), label=channel.name + ' U', linewidth=AppConfig.plot.line_width)
@@ -471,19 +488,6 @@ class Plot(Sensor.Sensor):
 
             self.add_ticks()
 
-            # for data in self._ax_data:
-            #     for child in data.ax.get_children():
-            #         print(type(child), child)
-            # print(len(self._ax_data))
-            # i1 = 0
-            # for data in self._ax_data:
-            #     i2 = 0
-            #     print(i1, data, len(data.ax.lines))
-            #     for line in data.ax.lines:
-            #         print(i1, i2, data, line)
-            #         i2 += 1
-            #     i1 += 1
-
         finally:
             self._plot_lock.release()
 
@@ -492,9 +496,9 @@ class Plot(Sensor.Sensor):
         for data in self._ax_data:
             if data.ax.get_visible():
                 artists.extend(data.lines)
-                for child in data.ax.get_children():
-                    if isinstance(child, (matplotlib.legend.Legend, matplotlib.text.Text)):
-                        artists.append(child)
+                # for child in data.ax.get_children():
+                #     if isinstance(child, (matplotlib.legend.Legend, matplotlib.text.Text)):
+                #         artists.append(child)
         return artists
 
 
@@ -532,12 +536,15 @@ class Plot(Sensor.Sensor):
                 aggregatedP = None
                 channels = []
                 tmp = []
+                channel_index = 0
                 for values in self.values.values():
                     U = np.array(values.U[display_idx:])
                     I = np.array(values.I[display_idx:])
                     P = np.array(values.P[display_idx:])
-                    tmp.append(P)
+                    if self.is_channel_active(channel_index):
+                        tmp.append(P)
                     channels.append(NamedTuples.PlotChannel(U=U, I=I, P=P))
+                    channel_index += 1
 
                 if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.AGGREGATED_POWER:
                     aggregatedP = np.array(tmp).sum(axis=0)
@@ -555,7 +562,7 @@ class Plot(Sensor.Sensor):
 
 
             # ---------------------------------------------------------------------------------------
-            for idx, channel in enumerate(self.channels):
+            for idx, channel in enumerate(self.active_channels):
 
                 # axis 0
                 line, values, ax = self.get_plot_data(0, idx)
@@ -640,13 +647,6 @@ class Plot(Sensor.Sensor):
 
             artists.append(self._ax_data[0].legend)
 
-            # data.ax.autoscale_view()
-            # data.ax.relim()
-            # for data in self._ax_data:
-            #     for child in data.ax.get_children():
-            #         artists.append(child)
-
-
             # full update required
             if self._canvas_update_required:
                 self._canvas_update_required = False
@@ -665,7 +665,8 @@ class Plot(Sensor.Sensor):
         finally:
             self._plot_lock.release()
 
-        self.update_debug_info()
+        if AppConfig._debug:
+            self.update_debug_info()
 
         return artists
 
@@ -673,24 +674,23 @@ class Plot(Sensor.Sensor):
     def update_debug_info(self):
 
         # DEBUG DISPLAY
-        if AppConfig._debug:
-            data_n = 0
-            for channel, values in self.values.items():
-                for type, items in values.items():
-                    data_n += len(items)
-                # parts.append('%u:#%u' % (channel, len(values[0])))
-                # for i in range(0, len(values)):
-                #     data_n += len(values[i])
+        data_n = 0
+        for channel, values in self.values.items():
+            for type, items in values.items():
+                data_n += len(items)
+            # parts.append('%u:#%u' % (channel, len(values[0])))
+            # for i in range(0, len(values)):
+            #     data_n += len(values[i])
 
-            p = [
-                'fps=%.2f' % self.get_plot_fps(),
-                'data=%u' % data_n
-            ]
-            for key, val in self.stats.items():
-                if isinstance(val, float):
-                    val = '%.4f' % val
-                p.append('%s=%s' % (key, val))
+        p = [
+            'fps=%.2f' % self.get_plot_fps(),
+            'data=%u' % data_n
+        ]
+        for key, val in self.stats.items():
+            if isinstance(val, float):
+                val = '%.4f' % val
+            p.append('%s=%s' % (key, val))
 
-            p.append('comp_rrq=%u' % (self.compressed_min_records<AppConfig.plot.compression.min_records and (AppConfig.plot.compression.min_records - self.compressed_min_records) or 0))
+        p.append('comp_rrq=%u' % (self.compressed_min_records<AppConfig.plot.compression.min_records and (AppConfig.plot.compression.min_records - self.compressed_min_records) or 0))
 
-            self.debug_label.configure(text=' '.join(p))
+        self.debug_label.configure(text=' '.join(p))

@@ -9,13 +9,20 @@ import os
 import socket
 import argparse
 import threading
+from pathlib import Path
 from Config import (JsonWriter, YamlWriter)
 from PowerMonitor.MainApp import MainApp
 from PowerMonitor import AppConfig
 from PowerMonitor.Config import Config
 
+if 'win' in sys.platform:
+    home_dir = os.environ.get('APPDATA')
+else:
+    home_dir = Path.home()
+config_dir = os.path.realpath(os.path.join(home_dir, '.power_monitor'))
+
 parser = argparse.ArgumentParser(description='Power Monitor')
-parser.add_argument('-C', '--config-dir', help='location of config.json and energy.json', type=str, default=os.path.realpath(os.path.join(os.environ.get('HOME'), '.power_monitor')))
+parser.add_argument('-C', '--config-dir', help='location of config.json and energy.json', type=str, default=config_dir)
 parser.add_argument('--display', help='override DISPLAY variable', type=str, default=None)
 parser.add_argument('--headless', help='start without GUI', action='store_true', default=None)
 parser.add_argument('--fullscreen', help='start in fullscreen mode', action='store_true', default=None)

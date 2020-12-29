@@ -119,19 +119,19 @@ class Animation(object):
         self._mode = Mode.SCHEDULED
         self._parent._scheduler.enter(time, SCHEDULER_PRIO.ANIMATION, self._setup)
 
-    def update(self):
-        self.debug('update')
-        if self.acquire(5.0):
-            try:
-                self._parent._canvas_update_required = True
-                if not self._ani:
-                    raise ValueError('_ani is invalid: %s' % type(self._ani))
-                self.stop()
-                self._ani = FuncAnimation(self._parent.fig, self._parent.plot_values, interval=self._interval, blit=True)
-                self.start()
-                self._parent.canvas.draw_idle()
-            finally:
-                self.release()
+    # def update(self):
+    #     self.debug('update')
+    #     if self.acquire(5.0):
+    #         try:
+    #             self._parent._canvas_update_required = True
+    #             if not self._ani:
+    #                 raise ValueError('_ani is invalid: %s' % type(self._ani))
+    #             self.stop()
+    #             self._ani = FuncAnimation(self._parent.fig, self._parent.plot_values, interval=self._interval, blit=True)
+    #             self.start()
+    #             self._parent.canvas.draw_idle()
+    #         finally:
+    #             self.release()
 
     def restart(self):
         self.debug('restart')

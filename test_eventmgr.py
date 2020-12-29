@@ -40,7 +40,7 @@ def thread_func2(name, event):
 
 for n in range(10):
     r = random.randint(-5, 5)
-    e.notify(EventManager.Notification('test1', {'cmd': 'hello %+02d' % r}, r))
+    e.notify('test1', {'cmd': 'hello %+02d' % r}, r)
 
 t = []
 thread = threading.Thread(target=thread_func1, args=('test1', e), daemon=True)
@@ -54,13 +54,13 @@ thread.start()
 t.append(thread)
 
 time.sleep(2)
-e.notify(EventManager.Notification('test1', {'cmd': 'hello'}))
+e.notify('test1', {'cmd': 'hello'})
 
 time.sleep(1)
 
 for n in range(10):
     r = random.randint(-5, 5)
-    e.notify(EventManager.Notification(EVENT_MANAGER.THREAD.ANY, {'cmd': 'hello %+02d' % r}, r))
+    e.notify(EVENT_MANAGER.THREAD.ANY, {'cmd': 'hello %+02d' % r}, r)
     time.sleep(0.1)
 
 
@@ -77,7 +77,7 @@ with e._notification_lock:
 
 time.sleep(2)
 
-e.notify(EventManager.Notification(EVENT_MANAGER.THREAD.ANY, {'cmd': 'terminate'}))
+e.notify(EVENT_MANAGER.THREAD.ANY, {'cmd': 'terminate'})
 
 for tt in t:
     tt.join()

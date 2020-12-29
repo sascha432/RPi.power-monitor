@@ -32,7 +32,7 @@ class Geometry(object):
         if self._dpi==None:
             return round(Geometry.DEFAULT_DPI * self.scaling)
         if self._dpi<0:
-            return round(-self._dpi)
+            return round(self._dpi * -1)
         return round(self._dpi * self.scaling)
 
     @property
@@ -94,15 +94,6 @@ class Geometry(object):
                 info += 'x%u' % self.dpi
         return info
 
-    # def __getitem__(self, key):
-    #     if key==0:
-    #         return self._width
-    #     elif key==1:
-    #         return self._height
-    #     elif key==2:
-    #         return self._scaling
-    #     raise KeyError('invalid key. use properties width, height, scaling or dpi')
-
 class Gui(tk.Tk):
 
     def __init__(self, parent):
@@ -158,8 +149,6 @@ class Gui(tk.Tk):
             self._parent.toggle_primary_display()
         elif func==Enums.KEY_BINDINGS.TOGGLE_DEBUG:
             self._parent.toggle_debug()
-        elif func==Enums.KEY_BINDINGS.RELOAD_GUI_CONFIG:
-            self._parent.reload_gui()
         elif func==Enums.KEY_BINDINGS.RELOAD_CONFIG:
             self._parent.reload_config()
         elif func==Enums.KEY_BINDINGS.RESET_PLOT:
@@ -170,6 +159,8 @@ class Gui(tk.Tk):
             self.destroy()
         elif func==Enums.KEY_BINDINGS.RAW_SENSOR_VALUES:
             self._parent.set_raw_values(not self._parent._raw_values)
+        elif func==Enums.KEY_BINDINGS.TOGGLE_CHANNEL:
+            self._parent.toggle_channel()
         else:
             raise RuntimeError('invalid key binding: %s' % func)
 

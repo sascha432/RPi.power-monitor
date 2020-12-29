@@ -3,7 +3,7 @@
 #
 
 from . import Tools
-from . import Idle
+from . import Influxdb
 import hashlib
 import json
 import copy
@@ -11,7 +11,7 @@ import numpy as np
 import EventManager
 import sys
 
-class Mqtt(Idle.Idle):
+class Mqtt(Influxdb.Influxdb):
 
     def __init__(self):
         global AppConfig
@@ -24,9 +24,7 @@ class Mqtt(Idle.Idle):
     def start(self):
         self.debug(__name__, 'start')
         if AppConfig.mqtt.host:
-            if 'win' in sys.platform:
-                self.error(__name__, "MQTT not enabled")
-            elif self.init_mqtt():
+            if self.init_mqtt():
                 self.thread_daemonize(__name__, self.mqtt_thread)
 
     def destroy(self):
@@ -72,7 +70,7 @@ class Mqtt(Idle.Idle):
         if False:
             self.client.on_log = self.on_log
         self.client.reconnect_delay_set(min_delay=1, max_delay=30)
-        self.client.will_set(AppConfig.mqtt.get_status_topic(), payload=AppConfig.mqtt.payload_offline, qos=AppConfig.mqtt.qos, retain=True)
+        self.client.will_set(AppConfig.mqtt.get_status_topic(), payload=AppConfig.mqtt.payload_offline, qos=1, retain=True)
 
         return True
 
@@ -89,27 +87,27 @@ class Mqtt(Idle.Idle):
         for entity, unit in AppConfig.mqtt.AGGREGATED:
             payload = self.create_hass_auto_conf(entity, 0, unit, entity, mac_addresses)
             topic = AppConfig.mqtt.get_auto_discovery_topic(0, entity)
-            self.debug(__name__, 'MQTT auto discovery %s: %s' % (topic, payload))
-            self.client.publish(topic, payload=payload, qos=AppConfig.mqtt.qos, retain=True)
+            self.debug(__name__, 'auto discovery %s: %s' % (topic, payload))
+            self.client.publish(topic, payload=payload, qos=1, retain=True)
 
         for channel in self.channels:
             for entity, unit in AppConfig.mqtt.ENTITIES.items():
                 payload = self.create_hass_auto_conf(entity, channel.number, unit, entity, mac_addresses)
                 topic = AppConfig.mqtt.get_auto_discovery_topic(channel.number, entity)
-                self.debug(__name__, 'MQTT auto discovery %s: %s', topic, payload)
-                self.client.publish(topic, payload=payload, qos=AppConfig.mqtt.qos, retain=True)
+                self.debug(__name__, 'auto discovery %s: %s', topic, payload)
+                self.client.publish(topic, payload=payload, qos=1, retain=True)
 
     def on_log(self, client, userdata, level, buf):
         self.debug(__name__, '%s: %s', level, buf)
 
     def on_connect(self, client, userdata, flags, rc):
-        self.debug(__name__, 'MQTT on_connect rc=%u', rc)
+        self.debug(__name__, 'on_connect rc=%u', rc)
         self.mqtt_connected = False
         if rc==0:
             self.add_stats('mqtt_con', 1)
             try:
                 self.mqtt_connected = True
-                self.client.publish(AppConfig.mqtt.get_status_topic(), AppConfig.mqtt.payload_online, qos=AppConfig.mqtt.qos, retain=True)
+                self.client.publish(AppConfig.mqtt.get_status_topic(), AppConfig.mqtt.payload_online, qos=1, retain=True)
                 if AppConfig.mqtt.auto_discovery:
                     self.mqtt_publish_auto_discovery()
             except Exception as e:
@@ -121,7 +119,7 @@ class Mqtt(Idle.Idle):
                     self.client.reconnect()
 
     def on_disconnect(self, client, userdata, rc):
-        self.debug(__name__, 'MQTT on_disconnect rc=%u', rc)
+        self.debug(__name__, 'on_disconnect rc=%u', rc)
         self.mqtt_connected = False
 
     def create_hass_auto_conf(self, entity, channel, unit, value_json_name, mac_addresses):
@@ -226,8 +224,8 @@ class Mqtt(Idle.Idle):
                         sum_E += tmp2[n]['ep']
 
                         topic = AppConfig.mqtt.get_channel_topic(n + 1)
-                        self.info(__name__, 'MQTT publish %s: %s', topic, payload)
-                        self.client.publish(topic, payload=payload, qos=AppConfig.mqtt.qos, retain=True)
+                        self.info(__name__, 'publish %s: %s', topic, payload)
+                        self.client.publish(topic, payload=payload, qos=AppConfig.mqtt.qos, retain=False)
 
                         n += 1
 
@@ -236,13 +234,13 @@ class Mqtt(Idle.Idle):
                         'E': self.format_float_precision(sum_E / 1000, kwh_precision),  # E is Wh, we send kWh
                     })
                     topic = AppConfig.mqtt.get_channel_topic(0)
-                    self.debug(__name__, 'MQTT publish %s: %s', topic, payload)
-                    self.client.publish(topic, payload=payload, qos=AppConfig.mqtt.qos, retain=True)
+                    self.debug(__name__, 'publish %s: %s', topic, payload)
+                    self.client.publish(topic, payload=payload, qos=AppConfig.mqtt.qos, retain=False)
 
                     self.add_stats('mqtt_pub', 1)
 
                 except Exception as e:
-                    self.error(__name__, 'MQTT error: %s: reconnecting...', e)
+                    self.error(__name__, 'error: %s: reconnecting...', e)
                     AppConfig._debug_exception(e)
                     self.client.reconnect()
 

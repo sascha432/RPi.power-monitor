@@ -18,8 +18,8 @@ class GuiConfig(object):
     }
 
     def __init__(self, parent=None, data={}):
-        self._parent = parent
-        self._invoke_write_on_change = False
+        object.__setattr__(self, '_parent', parent)
+        object.__setattr__(self, '_invoke_write_on_change', False)
         for key, val in data.items():
             object.__setattr__(self, key, val)
         for key in self.keys():
@@ -34,26 +34,19 @@ class GuiConfig(object):
     def disabled(self, value):
         self._invoke_write_on_change = not value
 
-    # def __setattr__(self, key, val):
-    #     if self._disabled==False and not key.startswith('_'):
-    #         self._parent.write_gui_config()
-    #         if self._allowed==None:
-    #             return
-    #         if not key in self._allowed:
-    #             if self._exception:
-    #                 KeyError('GuiConfig: cannot set attribute %s' % (key))
-    #             return
-    #     object.__setattr__(self, key, val)
+    def __setattr__(self, key, val):
+        if self._invoke_write_on_change and not key.startswith('_'):
+            self._parent.write_gui_config()
+            if not key in self.keys():
+                KeyError('GuiConfig: cannot set attribute %s' % (key))
+                # return
+        object.__setattr__(self, key, val)
 
     def _asdict(self):
-        return dcit(self)
+        d = {}
+        for key in self.keys():
+            d[key] = str(object.__getattribute__(self, key))
+        return d
 
     def keys(self):
         return GuiConfig.KEYS
-
-    def __iter__(self):
-        setattr(self, '_next', iter(self.keys()))
-        return self
-
-    def __next__(self):
-        return next(self._next)

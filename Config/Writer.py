@@ -61,6 +61,12 @@ class YamlWriter(Writer):
     def __init__(self, root, output=sys.stdout, section=None):
         Writer.__init__(self, root, output, section)
 
+    def _enum2str(self, value):
+        parts = []
+        for item in type(value):
+            parts.append(str(item).split('.')[-1])
+        return ','.join(parts)
+
     def _escape(self, value):
         if isinstance(value, str):
             tmp = value.replace("'", "''")
@@ -86,7 +92,10 @@ class YamlWriter(Writer):
             indent = ''
         else:
             indent = self._indent_str(level)
-        print('%s%s: %s' % (indent, param.name, self._escape(param.raw_value)), file=self._output)
+        msg = '%s%s: %s' % (indent, param.name, self._escape(param.raw_value))
+        if isinstance(param.default, Enum):
+            msg = '%-60.60s# options: [%s]' % (msg, self._enum2str(param.default))
+        print(msg, file=self._output)
 
     def dumps(self, indent=2, skip_root_name=False):
         self._indent = indent

@@ -17,54 +17,41 @@ import json
 class NamedTuples:
     YLimit = namedtuple('YLimit', ('min', 'max', 'ts'))
 
-class GuiConfig(object):
+class MainApp(Plot.Plot):
 
-    def __init__(self, parent=None, data={}, allowed=None, exception=False):
-        object.__setattr__(self, '_parent', parent)
-        object.__setattr__(self, '_allowed', allowed)
-        object.__setattr__(self, '_exception', exception)
-        object.__setattr__(self, '_disabled', True)
-        for key, val in data.items():
-            object.__setattr__(self, key, val)
-        if allowed:
-            for key in allowed:
-                if not hasattr(self, key):
-                    object.__setattr__(self, key, data[key])
+    def __init__(self, logger, app_config):
+        global AppConfig
+        AppConfig = app_config
 
-    @property
-    def disabled(self):
-        return self._disabled==False
-
-    @disabled.setter
-    def disabled(self, value):
-        object.__setattr__(self, '_disabled', value)
-
-    def __setattr__(self, key, val):
-        if self._disabled==False and not key.startswith('_'):
-            self._parent.write_gui_config()
-            if self._allowed==None:
-                return
-            if not key in self._allowed:
-                if self._exception:
-                    KeyError('GuiConfig: cannot set attribute %s' % (key))
-                return
-        object.__setattr__(self, key, val)
-
-    def _asdict(self):
-        tmp = {}
-        if self._allowed:
-            for key in self._allowed:
-                if not key.startswith('_'):
-                    val = getattr(self, key)
-                    s = str(val)
-                    if not isinstance(val, float) and '.' in s:
-                        s = s.split('.')[-1]
-                    tmp[key] = s
-        return tmp
-
-class MainAppCli(Plot.Plot):
-    def __init__(self):
+        self._gui = None
+        self._logger = logger
+        self._app_config = app_config
+        self._bases = Tools.get_bases(self.__module__, self.__class__.__qualname__)
         self.fullscreen_state = False
+
+        for func_name in ('start', 'destroy', 'reload', 'init_vars'):
+            obj = Tools.LambdaCaller(Tools.execute_method, (self, self._bases, func_name))
+            setattr(self, func_name, obj)
+
+        for class_type in self._bases:
+            self.debug(__name__, '%s.__init__()', class_type)
+            class_type.__init__(self)
+
+        self.main_init_vars()
+        self.init_vars()
+
+        try:
+            if not AppConfig.headless:
+                self.__init_gui__()
+        except Exception as e:
+            self._gui = None
+            if not AppConfig.headless:
+                self.error(__name__, 'failed to initialize GUI: %s', e)
+            self.debug(__name__, 'starting headless')
+            AppConfig._debug_exception(e)
+
+        self.start()
+
 
     def assign_attrs(self, child):
         # setattr(child, 'debug', self.debug)
@@ -76,22 +63,21 @@ class MainAppCli(Plot.Plot):
         setattr(child, 'warning', lambda *args: self.warning(name, *args))
         setattr(child, 'error', lambda *args: self.error(name, *args))
 
-    def start(self):
-        self.debug(__name__, 'start')
+    def mainloop(self):
+        self.debug(__name__, 'mainloop gui=%s' % (self._gui and 'enabled' or 'disabled'))
+        if self._gui:
+            self._gui.mainloop()
 
-    def init_vars(self):
+    def main_init_vars(self):
+
         self.debug(__name__, 'init_vars')
-
         self._gui_config = None
+        # channels to display
         self.channels = Channels()
-        # zero based list of enabled channels
-        # channel names are '1', '2' and '3'
-
         for index, channel in AppConfig.channels.items():
             channel.calibration._update_multipliers()
             if channel.enabled:
                 self.channels.append(channel)
-
         self.labels = [
             {'U': 0, 'e': 0},
             {'U': 0, 'e': 0},
@@ -100,10 +86,12 @@ class MainAppCli(Plot.Plot):
 
         self.reset_values()
         self.reset_avg()
-        self.load_energy()
+        self.reset_energy()
         self.reset_data()
 
-        self.mqtt_connected = False
+    def quit(self):
+        if self._gui:
+            self._gui.quit()
 
     def format_float_precision(self, value, limits = [(1.0, 4), (10.0, 3), (100.0, 2), (1000.0, 1), (None, 0)], fmt='%%.%uf'):
         if value == 0:
@@ -137,17 +125,6 @@ class MainAppCli(Plot.Plot):
             (round(max - tolerance, round_digits) > round(li.max, round_digits)) or \
                 ((time.monotonic() + timeout >= li.ts) and (round(min, round_digits) != round(li.min, round_digits) or round(max, round_digits) != round(li.max, round_digits)))
 
-
-    def add_stats_minmax(self, name, value=0, type='max', reset=False):
-        if reset:
-            value = type=='min' and sys.maxsize or 0
-        if not name in self.stats:
-            self.stats[name] = value
-        if type=='min':
-            self.stats[name] = min(value, self.stats[name])
-        else:
-            self.stats[name] = max(value, self.stats[name])
-
     def add_stats(self, name, value, set_value=False):
         if set_value:
             self.stats = value
@@ -180,64 +157,7 @@ class MainAppCli(Plot.Plot):
             if lock:
                 self._data_lock.release()
 
-    def reset_plot(self):
-        try:
-            self.ani.event_source.stop()
-            self.ani = None
-        except:
-            self.ani = None
-        self.reset_values()
-        self.reset_data()
-
-    def reset_energy(self):
-        self.energy = dict(enumerate([{'t': 0, 'ei': 0, 'ep': 0}]*3))
-        self.energy['stored'] = 0
-
-class MainApp(MainAppCli):
-
-    def __init__(self, logger, app_config):
-        global AppConfig
-        AppConfig = app_config
-
-        self._gui = None
-        self._logger = logger
-        self._app_config = app_config
-        self._bases = Tools.get_bases(self.__module__, self.__class__.__qualname__)
-
-        for func_name in ('start', 'destroy', 'reload', 'init_vars'):
-            obj = Tools.LambdaCaller(Tools.execute_method, (self, self._bases, func_name))
-            setattr(self, func_name, obj)
-
-        for class_type in self._bases:
-            self.debug(__name__, '%s.__init__()', class_type)
-            class_type.__init__(self)
-
-        self.init_vars()
-
-        try:
-            if AppConfig.headless:
-                raise RuntimeWarning('failed to initialize GUI in debug mode. this warning is raised with headless=True')
-            self.__init_gui__()
-        except Exception as e:
-            self._gui = None
-            if not AppConfig.headless:
-                self.error(__name__, 'failed to initialize GUI: %s', e)
-            self.debug(__name__, 'starting headless')
-            AppConfig._debug_exception(e)
-
-        self.start()
-
-    def mainloop(self):
-        self.debug(__name__, 'mainloop gui=%s' % (self._gui and 'enabled' or 'disabled'))
-        if self._gui:
-            self._gui.mainloop()
-        else:
-            MainAppCli.loop(self, False)
-
-    def quit(self):
-        if self._gui:
-            self._gui.quit()
-
+    @staticmethod
     def _execute_base_methods(self_obj, func_name, *args, **kwargs):
         self_obj.debug(__name__, 'calling __bases__.%s', func_name)
         Tools.execute_method(self_obj, self_obj._bases, func_name, *args, **kwargs)
@@ -289,6 +209,8 @@ class MainApp(MainAppCli):
         return "break"
 
     def destroy(self):
+        self.remove_scheduled_gui_writes()
+        self._write_gui_config()
         if self.ani:
             self.debug(__name__, 'stop animation')
             self.ani.event_source.stop()
@@ -323,9 +245,9 @@ class MainApp(MainAppCli):
         Channel.COLOR_AGGREGATED_POWER = self.CHANNELS[6]
 
         for i in range(3):
-            if AppConfig.channels[i].color=='':
+            if not AppConfig.channels[i].color:
                 AppConfig.channels[i].color = self.CHANNELS[i]
-            if AppConfig.channels[i].hline_color=='':
+            if not AppConfig.channels[i].hline_color:
                 AppConfig.channels[i].hline_color = self.CHANNELS[i + 3]
 
         self._fonts = namedtuple('GuiFonts', ['top_font', 'debug_font', 'label_font'])
@@ -338,41 +260,43 @@ class MainApp(MainAppCli):
         if (self._animation.mode!=Animation.Mode.RUNNING)==running:
             self.mode = Animation.Mode.IDLE
 
-    def get_gui_scheme_config_filename(self, auto=''):
-        if auto==True:
-            auto = '-auto'
-        return 'gui-%u-%ux%ux%s%s.json' % (len(self.channels), self.geometry.width, self.geometry.height, self.geometry.scaling, auto)
+    # def get_gui_scheme_config_filename(self, auto=''):
+    #     if auto==True:
+    #         auto = '-auto'
+    #     return 'gui-%u-%ux%ux%s%s.json' % (len(self.channels), self.geometry.width, self.geometry.height, self.geometry.scaling, auto)
 
     # ---------------------------------------------------------------------------------------------
     # gui config
     # ---------------------------------------------------------------------------------------------
 
     def read_gui_config(self):
-        defaults = {
-            'plot_visibility': PLOT_VISIBILITY.BOTH,
-            'plot_primary_display': PLOT_PRIMARY_DISPLAY.CURRENT,
-            'plot_display_energy': DISPLAY_ENERGY.WH, #AppConfig.plot.display_energy,
-            'plot_time_scale': 1.0
-        }
+        defaults = GuiConfig.DEFAULTS
         e = ''
         try:
             file = AppConfig.get_filename('config_state.json')
             self.debug(__name__, 'read gui config %s', file)
             with open(file, 'r') as f:
                 data = json.loads(f.read())
-                self._gui_config = GuiConfig(self, data, defaults.keys())
+                self._gui_config = GuiConfig(self, data)
         except Exception as e:
             self.info(__name__, 'failed to load: %s: %s', file, e)
-            self._gui_config = GuiConfig(self, defaults, defaults.keys())
+            self._gui_config = GuiConfig(self, defaults)
 
         try:
             self._gui_config.plot_visibility = Tools.EnumFromStr(PLOT_VISIBILITY, self._gui_config.plot_visibility)
             self._gui_config.plot_display_energy = Tools.EnumFromStr(DISPLAY_ENERGY, self._gui_config.plot_display_energy)
             self._gui_config.plot_primary_display = Tools.EnumFromStr(PLOT_PRIMARY_DISPLAY, self._gui_config.plot_primary_display)
             self._gui_config.plot_time_scale = max(0, min(1, float(self._gui_config.plot_time_scale)))
+            if not isinstance(self._gui_config.plot_channels, list):
+                self._gui_config.plot_channels = [True, True, True]
+            for active in self._gui_config.plot_channels:
+                if not isinstance(active, bool):
+                    active = True
         except Exception as e:
             self.info(__name__, 'invalid configuration: %s: %s', file, e)
-            self._gui_config = GuiConfig(self, defaults, defaults.keys())
+            self._gui_config = GuiConfig(self, defaults)
+
+        self.debug(__name__, 'gui configuration %s' % json.dumps(self._gui_config._asdict(), indent=2))
 
         self._gui_config.disabled = False
 
@@ -386,51 +310,63 @@ class MainApp(MainAppCli):
         except Exception as e:
             self.error(__name__, 'failed to store: %s: %s', file, e)
 
-    def write_gui_config(self):
+    def remove_scheduled_gui_writes(self):
         for item in self._scheduler.queue:
             if getattr(item, 'priority')==SCHEDULER_PRIO.WRITE_GUI_CONFIG:
                 self._scheduler.cancel(item)
+
+    def write_gui_config(self):
+        self.remove_scheduled_gui_writes()
         self._scheduler.enter(10.0, SCHEDULER_PRIO.WRITE_GUI_CONFIG, self._write_gui_config)
 
     # ---------------------------------------------------------------------------------------------
     # tk events
     # ---------------------------------------------------------------------------------------------
 
+    def reset_plot(self):
+        self._animation.end()
+        self.reset_values()
+        self.reset_data()
+        self.reconfigure_axis()
+        self.canvas.redraw()
+        self._animation.restart()
+        return "break"
+
     def toggle_debug(self, event=None):
         self.debug_label_state = (self.debug_label_state + 1) % 3
         if self.debug_label_state==0:
-            self.debug_label.place(rely=1.0-0.135, relheight=0.13)
+            self.debug_label.place(rely=1.0-0.135, relwidth=1.0, relheight=0.13)
             self._fonts.debug_font.configure(size=10)
             self.debug_label.configure(font=self._fonts.debug_font)
             # self.debug_label.configure(font=('Verdana', 10))
         if self.debug_label_state==1:
-            self.debug_label.place(rely=1.0-0.255, relheight=0.25)
+            self.debug_label.place(rely=1.0-0.255, relwidth=1.0, relheight=0.25)
             # self.debug_label.configure(font=('Verdana', 18))
             self._fonts.debug_font.configure(size=18)
             self.debug_label.configure(font=self._fonts.debug_font)
         if self.debug_label_state==2:
-            self.debug_label.place(rely=1.1, relheight=0.1)
+            self.debug_label.place(relx=0, rely=0, relwidth=0, relheight=0)
         return 'break'
 
-    def reload_gui(self, event=None):
-        self.debug(__name__, 'reload gui')
-        try:
-            with open(AppConfig.get_filename(self.get_gui_scheme_config_filename()), 'r') as f:
-                gui = json.loads(f.read())
-            self.canvas.get_tk_widget().place(**gui['plot_placement'])
-            places = gui['label_places']
-            for channel in self.channels:
-                if channel.enabled:
-                    self.labels[channel]['U'].place(**places.pop(0))
-                    self.labels[channel]['I'].place(**places.pop(0))
-                    self.labels[channel]['P'].place(**places.pop(0))
-                    self.labels[channel]['e'].place(**places.pop(0))
+    # def reload_gui(self, event=None):
+    #     self.debug(__name__, 'reload gui')
+    #     try:
+    #         with open(AppConfig.get_filename(self.get_gui_scheme_config_filename()), 'r') as f:
+    #             gui = json.loads(f.read())
+    #         self.canvas.get_tk_widget().place(**gui['plot_placement'])
+    #         places = gui['label_places']
+    #         for channel in self.channels:
+    #             if channel.enabled:
+    #                 self.labels[channel]['U'].place(**places.pop(0))
+    #                 self.labels[channel]['I'].place(**places.pop(0))
+    #                 self.labels[channel]['P'].place(**places.pop(0))
+    #                 self.labels[channel]['e'].place(**places.pop(0))
 
-            self._animation.update()
+    #         self._animation.update()
 
-        except Exception as e:
-            self.error(__name__, 'reloading GUI failed: %s' % e)
-        return "break"
+    #     except Exception as e:
+    #         self.error(__name__, 'reloading GUI failed: %s' % e)
+    #     return "break"
 
     def reload_config(self, event=None):
         self.debug(__name__, 'reload config')
@@ -457,6 +393,7 @@ class MainApp(MainAppCli):
             self.toggle_primary_display()
 
     def toggle_time_scale(self, event=None):
+        self._animation.end()
         num = len(self._time_scale_items)
         if event==-1 or event==1:
             pass
@@ -464,11 +401,44 @@ class MainApp(MainAppCli):
             event = 1
         self._gui_config.plot_time_scale = self._gui_config.plot_time_scale + 0.10 * event
         self._gui_config.plot_time_scale = min(1.0, max(0.0, self._gui_config.plot_time_scale))
-        self.add_ticks()
-        self._animation.update()
+        self.reconfigure_axis()
+        self.canvas.draw()
+        self._animation.restart()
         self.show_popup('%u of %u seconds (%.1f%%)' % (self.get_time_scale(), AppConfig.plot.max_time, self._gui_config.plot_time_scale * 100))
         # self.change_averaging_mode(self.get_time_scale())
         return "break"
+
+    def toggle_channel(self, event=None):
+        self._animation.end()
+        n = 0
+        next = None
+        for index, active in enumerate(self._gui_config.plot_channels[0:len(self.channels)]):
+            if active:
+                n += 1
+                next = index + 1
+
+        self._gui_config.plot_channels = [False, False, False]
+        if next>=len(self.channels):
+            if n==len(self.channels):
+                # all channels active, display first one
+                self._gui_config.plot_channels[0] = True
+            else:
+                # next channel does not exist, display all
+                self._gui_config.plot_channels = [True, True, True]
+        else:
+            # display next
+            self._gui_config.plot_channels[next] = True
+
+        # self.debug(__name__, 'displayed channels %s ' % self._gui_config.plot_channels)
+        self.debug(__name__, 'active channels: %s' % ([channel.name for channel in self.active_channels]))
+
+        # self.reinit_main_frame()
+        self.set_plot_geometry()
+        self.reconfigure_axis()
+        self.canvas.draw()
+        self._animation.restart()
+        return "break"
+
 
     def store_values(self, event=None):
         fn = 'data-%u.json' % int(time.monotonic())
@@ -498,12 +468,16 @@ class MainApp(MainAppCli):
         self._animation.end()
         self._gui_config.plot_primary_display = Tools.EnumIncr(self._gui_config.plot_primary_display)
         self.reconfigure_axis()
+        self.canvas.draw()
         self._animation.restart()
         return 'break'
 
     def toggle_display_energy(self, event=None):
+        self._animation.end()
         self._gui_config.plot_display_energy = Tools.EnumIncr(self._gui_config.plot_display_energy)
-        self._animation.update()
+        self.reconfigure_axis()
+        self.canvas.draw()
+        self._animation.restart()
         return 'break'
 
     def show_popup(self, msg, timeout=3.5):

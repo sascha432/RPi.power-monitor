@@ -99,6 +99,10 @@ class Sensor(Mqtt.Mqtt):
         self.ina3221._calibration = ChannelCalibration(AppConfig)
         self.reset_data()
 
+    def reset_energy(self):
+        self.energy = dict(enumerate([{'t': 0, 'ei': 0, 'ep': 0}]*3))
+        self.energy['stored'] = 0
+
     def reset_data(self):
         # do not store data for GUI in headless mode
         if AppConfig.headless:
@@ -180,10 +184,8 @@ class Sensor(Mqtt.Mqtt):
                                     self.averages[2][index] += current
                                     self.averages[3][index] += power
 
-                                    # self.add_stats_minmax('ch%u_U' % index, loadvoltage)
-                                    # self.add_stats_minmax('ch%u_I' % index, current)
-                                    # self.add_stats_minmax('ch%u_P' % index, power)
-
+                                    # due to the resoluation of the timestamp, energy can only be calculated precisely having an interval > 50ms
+                                    # precision will benefit from even longer intervals
                                     if self.ina3221._channel_read_time>=Sensor.ENERGY_MIN_READTIME:
                                         if self.energy[index]['t']==0 or ts==0:
                                             self.energy[index]['t'] = ts
@@ -210,6 +212,24 @@ class Sensor(Mqtt.Mqtt):
 
                         finally:
                             self._data_lock.release()
+
+                        if self.influx_client:
+                            influx_data = {
+                                'measurement': 'ina3221',
+                                'tags': {
+                                    'host': 'acidpi1'
+                                },
+                                'time': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.localtime()),
+                                'fields': {}
+                            }
+                            for index, (loadvoltage, current, power, ts) in enumerate(tmp):
+                                influx_data['ch%02u_U' % index] = loadvoltage
+                                influx_data['ch%02u_I' % index] = current
+                                influx_data['ch%02u_P' % index] = power
+
+                            # print(json.dumps(influx_data))
+                            self.influx_client.write_points(json.dumps(influx_data))
+
 
                         if self._gui and self._animation.mode==Animation.Mode.NONE:
                             self.debug(__name__, 'starting animation from sensor')
