@@ -160,7 +160,9 @@ SHUNT_RESISTOR_VALUE         = (0.1)   # default shunt resistor value of 0.1 Ohm
 
 
 
-class INA3221Base():
+class INA3221Base(object):
+
+    VSHUNT_LIMITS = (-163.84, 163.8)
 
     ###########################
     # INA3221 Code
@@ -169,6 +171,10 @@ class INA3221Base():
         self._bus = smbus.SMBus(twi)
         self._addr = addr
         self._shunt = shunt
+        # min. current that can be measured
+        self._minI = INA3221Base.VSHUNT_LIMITS[0] / self._shunt
+        # max. current that can be measured
+        self._maxI = INA3221Base.VSHUNT_LIMITS[1] / self._shunt
         self.settings(channels, avg, vbus_ct, vshunt_ct)
 
     def settings(self, channels, avg, vbus_ct, vshunt_ct):
@@ -176,6 +182,12 @@ class INA3221Base():
         self._calibration = {}
         self._write_register_little_endian(INA3221_REG_CONFIG, self._config)
         self._channel_read_time = INA3221.get_interval(avg, vbus_ct, vshunt_ct)
+
+    def get_min_current(self, shunt=1):
+        return self._minI / shunt
+
+    def get_max_current(self, shunt=1):
+        return self._maxI / shunt
 
     def get_interval(avg, vbus_ct, vshunt_ct):
         return ((int(str(avg).split('.')[-1][1:]) * (int(str(vbus_ct).split('.')[-1].split('_')[1]) + int(str(vshunt_ct).split('.')[-1].split('_')[1]))) / 1000000.0) * 0.95

@@ -12,6 +12,12 @@ import json
 from collections import namedtuple
 from . import FormatFloat, Sensor, Tools, PLOT_VISIBILITY, PLOT_PRIMARY_DISPLAY, SCHEDULER_PRIO, DISPLAY_ENERGY
 
+try:
+    from colour import Color
+    colour = True
+except:
+    colour = False
+
 class NamedTuples:
     PlotData = namedtuple('PlotData', ['time', 'P', 'channels'])
     PlotChannel = namedtuple('PlotChannel', ['U', 'I', 'P'])
@@ -457,6 +463,11 @@ class Plot(Sensor.Sensor):
 
             values = []
 
+            x_limits = {
+                'xmin': -self.get_time_scale(),
+                'xmax': self.get_time_scale()
+            }
+
             # primary plot current or for power for all channels
             data = self._ax_data[0]
             if self._gui_config.plot_visibility in(PLOT_VISIBILITY.PRIMARY, PLOT_VISIBILITY.BOTH):
@@ -468,6 +479,27 @@ class Plot(Sensor.Sensor):
                         if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
                             line, = data.ax.plot(values, values, color=channel._color_for('I'), label=channel.name + ' I', linewidth=AppConfig.plot.line_width)
                             data.lines.append(line)
+
+
+                            def get_color(i):
+                                if colour:
+                                    red = Color("red")
+                                    colors = list(red.range_to(Color("yellow"),5))
+                                    return str(colors[i])
+                                else:
+                                    return '#%02x0000' % (int((5 - i) * 255/5))
+
+                            for i in range(5):
+                                max_current = data.ax.axhline(
+                                    self.ina3221.get_max_current(channel.calibration.shunt) * (1 - (i / 100)) * 0.98,
+                                    zorder=1000,
+                                    xmin=-self.get_time_scale(),
+                                    xmax=self.get_time_scale(),
+                                    color=get_color(i),
+                                    linewidth=AppConfig.plot.line_width,
+                                    ls=':'
+                                )
+
                         elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.POWER:
                             line, = data.ax.plot(values, values, color=channel._color_for('P'), label=channel.name + ' P', linewidth=AppConfig.plot.line_width)
                             data.lines.append(line)

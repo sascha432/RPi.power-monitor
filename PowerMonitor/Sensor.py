@@ -70,7 +70,7 @@ class Sensor(Mqtt.Mqtt):
         if self.ina3221._channel_read_time<Sensor.ENERGY_MIN_READTIME:
             print(AppConfig.ignore_warnings)
             if AppConfig.ignore_warnings<=0:
-                raise RuntimeWarning("Sensor read time below minimum. %.6f<%s. Energy readings won't be available. Start with --ingore-warnings=<number>" % (self.ina3221._channel_read_time, Sensor.ENERGY_MIN_READTIME))
+                raise RuntimeWarning("Sensor read time below minimum. %.6f<%s. Energy readings won't be available. Start with --ignore-warnings=<number>" % (self.ina3221._channel_read_time, Sensor.ENERGY_MIN_READTIME))
             AppConfig.ignore_warnings -= 1
 
         return True

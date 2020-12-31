@@ -42,6 +42,7 @@ Tested with Python 3.7.8 on windows and Python 3.7.3 on debian (armv7l)
 - commentjson for reading configuration files with comments
 - matplotlib and tkinter for the GUI
 - colorlog
+- colour
 - influxdb
 
 ### Windows limitations

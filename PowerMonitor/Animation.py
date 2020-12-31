@@ -91,7 +91,7 @@ class Animation(object):
         if not self.acquire(5.0):
             return
         try:
-            self._ani = FuncAnimation(self._parent.fig, self._parent.plot_values, interval=self._interval, blit=True)
+            self._ani = FuncAnimation(self._parent.fig, self._parent.plot_values, interval=self._interval, blit=AppConfig.blit)
             self._mode = Mode.RUNNING
             self._parent.canvas.draw_idle()
         except Exception as e:
@@ -127,7 +127,7 @@ class Animation(object):
     #             if not self._ani:
     #                 raise ValueError('_ani is invalid: %s' % type(self._ani))
     #             self.stop()
-    #             self._ani = FuncAnimation(self._parent.fig, self._parent.plot_values, interval=self._interval, blit=True)
+    #             self._ani = FuncAnimation(self._parent.fig, self._parent.plot_values, interval=self._interval, blit=AppConfig.blit)
     #             self.start()
     #             self._parent.canvas.draw_idle()
     #         finally:
@@ -138,7 +138,7 @@ class Animation(object):
         self.end()
         self.acquire()
         try:
-            self._ani = FuncAnimation(self._parent.fig, self._parent.plot_values, interval=self._interval, blit=True)
+            self._ani = FuncAnimation(self._parent.fig, self._parent.plot_values, interval=self._interval, blit=AppConfig.blit)
             self.start()
             self._parent.canvas.draw_idle()
         finally:

@@ -13,6 +13,8 @@ class App(Base):
 
     VERSION = '0.0.1'
 
+    blit = False
+
     config_dir = ('.', (Param.ReadOnly,))
     config_file = ('{config_dir}/config.json', (Param.ReadOnly,))
 
@@ -61,6 +63,8 @@ class Channel(ItemBase):
     hline_color = (None, (str,))
 
     COLOR_AGGREGATED_POWER = 'red'
+    COLOR_MAX_CURRENT = 'red'
+    COLOR_MIN_CURRENT = 'blue'
 
     def __init__(self, struct, index):
         ItemBase.__init__(self, struct, index)
