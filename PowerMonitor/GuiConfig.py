@@ -14,7 +14,7 @@ class GuiConfig(object):
         'plot_primary_display': PLOT_PRIMARY_DISPLAY.CURRENT,
         'plot_display_energy': DISPLAY_ENERGY.WH,
         'plot_time_scale': 1.0,
-        'plot_channels': [True, True, True]
+        'plot_channels': 0
     }
 
     def __init__(self, parent=None, data={}):

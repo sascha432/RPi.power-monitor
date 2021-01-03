@@ -34,23 +34,9 @@ class Sensor(Mqtt.Mqtt):
         self._read_count = 0
         self._errors = 0
         self._compress_data_timeout = 0
-        self._raw_values = False
 
         if not self._init_ina3221_sensor():
             self._errors += 1
-
-    def set_raw_values(self, raw):
-        self._data_lock.acquire()
-        try:
-            self.debug(__name__, 'raw sensor values: %s' % raw)
-            self._raw_values = raw
-            self.reset_avg()
-            self.reset_data()
-            self.reset_values(False)
-        finally:
-            self._data_lock.release()
-        self.canvas.draw()
-        self.show_popup('Raw sensor values %s' % (raw and 'enabled' or 'disabled'))
 
     def _init_ina3221_sensor(self, init_calib=False):
         if AppConfig.ina3221.auto_mode_sensor_values_per_second!=None and AppConfig.ina3221.auto_mode_sensor_values_per_second!=0:
@@ -143,21 +129,14 @@ class Sensor(Mqtt.Mqtt):
                             tmp.append((0, 0, 0, 0))
                         else:
                             try:
-                                if self._raw_values:
-                                    current = self.ina3221._getShuntVoltage_raw(ch)
-                                    busvoltage = self.ina3221._getBusVoltage_raw(ch)
-                                    power = current * busvoltage
-                                    self.add_stats('sensor', 1)
-                                    tmp.append((busvoltage, current, power, time.monotonic()))
-                                else:
-                                    busvoltage = self.ina3221.getBusVoltage_V(ch)
-                                    shuntvoltage = self.ina3221.getShuntVoltage_V(ch)
-                                    current = self.ina3221.getCurrent_mA(ch)
-                                    loadvoltage = busvoltage - shuntvoltage
-                                    current = current / 1000.0
-                                    power = (current * busvoltage)
-                                    self.add_stats('sensor', 1)
-                                    tmp.append((loadvoltage, current, power, time.monotonic()))
+                                busvoltage = self.ina3221.getBusVoltage_V(ch)
+                                shuntvoltage = self.ina3221.getShuntVoltage_V(ch)
+                                current = self.ina3221.getCurrent_mA(ch)
+                                loadvoltage = busvoltage - shuntvoltage
+                                current = current / 1000.0
+                                power = (current * busvoltage)
+                                self.add_stats('sensor', 1)
+                                tmp.append((loadvoltage, current, power, time.monotonic()))
                             except Exception as e:
                                 self.add_stats('senerr', 1)
                                 self.error(__name__, 'exception while reading INA3221 sensor: %s', str(e))
@@ -178,31 +157,30 @@ class Sensor(Mqtt.Mqtt):
 
                             for index, (loadvoltage, current, power, ts) in enumerate(tmp):
 
-                                if not self._raw_values:
-                                    self.averages[0][index] += 1
-                                    self.averages[1][index] += loadvoltage
-                                    self.averages[2][index] += current
-                                    self.averages[3][index] += power
+                                self.averages[0][index] += 1
+                                self.averages[1][index] += loadvoltage
+                                self.averages[2][index] += current
+                                self.averages[3][index] += power
 
-                                    # due to the resoluation of the timestamp, energy can only be calculated precisely having an interval > 50ms
-                                    # precision will benefit from even longer intervals
-                                    if self.ina3221._channel_read_time>=Sensor.ENERGY_MIN_READTIME:
-                                        if self.energy[index]['t']==0 or ts==0:
-                                            self.energy[index]['t'] = ts
+                                # due to the resoluation of the timestamp, energy can only be calculated precisely having an interval > 50ms
+                                # precision will benefit from even longer intervals
+                                if self.ina3221._channel_read_time>=Sensor.ENERGY_MIN_READTIME:
+                                    if self.energy[index]['t']==0 or ts==0:
+                                        self.energy[index]['t'] = ts
+                                    else:
+                                        diff = ts - self.energy[index]['t']
+                                        # do not add if there is a gap that is over 3x times the expected read time
+                                        if diff < diff_limit:
+                                            self.energy[index]['ei'] += (diff * current / 3600)
+                                            self.energy[index]['ep'] += (diff * power / 3600)
                                         else:
-                                            diff = ts - self.energy[index]['t']
-                                            # do not add if there is a gap that is over 3x times the expected read time
-                                            if diff < diff_limit:
-                                                self.energy[index]['ei'] += (diff * current / 3600)
-                                                self.energy[index]['ep'] += (diff * power / 3600)
-                                            else:
-                                                if diff>diff_limit * 10:
-                                                    self.error(__name__, 'sensor read timeout for channel number %u: %.3fsec channels: %u read time: %.6fms', (index + 1), diff, len(self.channels), self.ina3221._channel_read_time / 1000000)
-                                            self.energy[index]['t'] = ts
+                                            if diff>diff_limit * 10:
+                                                self.error(__name__, 'sensor read timeout for channel number %u: %.3fsec channels: %u read time: %.6fms', (index + 1), diff, len(self.channels), self.ina3221._channel_read_time / 1000000)
+                                        self.energy[index]['t'] = ts
 
-                                        if t>self.energy['stored'] + min(30, AppConfig.store_energy_interval): # limited to >=30 seconds
-                                            self.energy['stored'] = t;
-                                            self.db_store_energy()
+                                    if t>self.energy['stored'] + min(30, AppConfig.store_energy_interval): # limited to >=30 seconds
+                                        self.energy['stored'] = t;
+                                        self.db_store_energy()
 
 
                                 if self.data:
@@ -255,16 +233,10 @@ class Sensor(Mqtt.Mqtt):
 
     def db_load_energy(self):
         try:
-            tmp = {}
             self.reset_energy()
+            statement = 'SELECT channel_id, MAX(energy_Ah) AS ei, MAX(energy_Wh) as ep FROM energy GROUP BY channel_id ORDER BY updated_ts DESC,channel_id ASC LIMIT 3'
             cur = self._conn.cursor()
-            for row in cur.execute('SELECT * FROM energy ORDER BY updated_ts DESC,channel_id ASC LIMIT 3'):
-                tmp[row[0]] = {
-                    'ei': row[1],
-                    'ep': row[2],
-                    't': 0
-                }
-
+            tmp = { row[0]: { 'ei': row[1], 'ep': row[2], 't': 0 } for row in cur.execute(statement) }
             self.debug(__name__, 'loaded energy from database: %s' % tmp)
             self.energy.update(tmp)
 
@@ -285,6 +257,13 @@ class Sensor(Mqtt.Mqtt):
             cur = self._conn.cursor()
             cur.execute(statement)
             self._conn.commit()
+
+            statement = 'DELETE FROM energy WHERE updated_ts<%d' % (timestamp - 3600)
+            cur.execute(statement)
+            self._conn.commit()
+            cur.execute('VACUUM')
+            self._conn.commit()
+
         except Exception as e:
             self.error(__name__, 'failed to store energy in database: %s: %s', statement, e)
 

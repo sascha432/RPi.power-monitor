@@ -36,7 +36,6 @@ class KEY_BINDINGS(Enum):
     QUIT = 9
     MENU = 10
     RAW_SENSOR_VALUES = 11
-    TOGGLE_CHANNEL = 12
 
 class COLOR_SCHEME(Enum):
     DARK = 0

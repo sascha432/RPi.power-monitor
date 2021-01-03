@@ -287,11 +287,7 @@ class MainApp(Plot.Plot):
             self._gui_config.plot_display_energy = Tools.EnumFromStr(DISPLAY_ENERGY, self._gui_config.plot_display_energy)
             self._gui_config.plot_primary_display = Tools.EnumFromStr(PLOT_PRIMARY_DISPLAY, self._gui_config.plot_primary_display)
             self._gui_config.plot_time_scale = max(0, min(1, float(self._gui_config.plot_time_scale)))
-            if not isinstance(self._gui_config.plot_channels, list):
-                self._gui_config.plot_channels = [True, True, True]
-            for active in self._gui_config.plot_channels:
-                if not isinstance(active, bool):
-                    active = True
+            self._gui_config.plot_channels = int(self._gui_config.plot_channels)
         except Exception as e:
             self.info(__name__, 'invalid configuration: %s: %s', file, e)
             self._gui_config = GuiConfig(self, defaults)
@@ -408,26 +404,14 @@ class MainApp(Plot.Plot):
         # self.change_averaging_mode(self.get_time_scale())
         return "break"
 
-    def toggle_channel(self, event=None):
+    def toggle_channel(self, channel, event=None):
         self._animation.end()
-        n = 0
-        next = None
-        for index, active in enumerate(self._gui_config.plot_channels[0:len(self.channels)]):
-            if active:
-                n += 1
-                next = index + 1
 
-        self._gui_config.plot_channels = [False, False, False]
-        if next>=len(self.channels):
-            if n==len(self.channels):
-                # all channels active, display first one
-                self._gui_config.plot_channels[0] = True
-            else:
-                # next channel does not exist, display all
-                self._gui_config.plot_channels = [True, True, True]
+        bv = (1 << channel)
+        if self._gui_config.plot_channels & bv:
+            self._gui_config.plot_channels &= ~bv
         else:
-            # display next
-            self._gui_config.plot_channels[next] = True
+            self._gui_config.plot_channels |= bv
 
         # self.debug(__name__, 'displayed channels %s ' % self._gui_config.plot_channels)
         self.debug(__name__, 'active channels: %s' % ([channel.name for channel in self.active_channels]))

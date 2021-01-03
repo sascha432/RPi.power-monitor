@@ -15,13 +15,9 @@ class App(Base):
 
     blit = False
 
-    config_dir = ('.', (Param.ReadOnly,))
+    config_dir = (None, (Param.ReadOnly,))
     config_file = ('{config_dir}/config.json', (Param.ReadOnly,))
-
     database_file = '{config_dir}/power_monitor.db'
-
-    energy_storage_file = '{config_dir}/energy.json'
-    energy_storage_num_backups = 3
 
     pid_file = '{config_dir}/power_monitor.pid'
 
@@ -155,7 +151,6 @@ class KeyBindings(Base):
     plot_visibility = ('<F2>', (str,))
     plot_primary_display = ('<F3>', (str,))
     plot_display_energy= ('<F4>', (str,))
-    toggle_channel = ('<F5>', (str,))
     toggle_debug = ('<Control-F9>', (str,))
     reload_config = ('<F11>', (str,))
     reset_plot = ('<Control-F10>', (str,))

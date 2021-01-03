@@ -18,7 +18,7 @@ from PowerMonitor.Config import Config
 if 'win' in sys.platform:
     home_dir = os.environ.get('APPDATA')
 else:
-    home_dir = Path.home()
+    home_dir = os.path.expanduser('~')
 config_dir = os.path.realpath(os.path.join(home_dir, '.power_monitor'))
 
 parser = argparse.ArgumentParser(description='Power Monitor')

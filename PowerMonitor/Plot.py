@@ -213,24 +213,30 @@ class Plot(Sensor.Sensor):
             tmp['relx'] += tmp['relwidth'] * idx
             frame.place(in_=top, **tmp)
 
+            toggler = Tools.LambdaCaller(self.toggle_channel, (idx,))
+
             label = tk.Label(self._gui, text="- V", **label_config)
             label.pack(in_=frame)
             label.place(in_=frame, **places.pop(0))
+            label.bind('<Button-1>', toggler)
             self.labels[idx]['U'] = label
 
             label = tk.Label(self._gui, text="- A", **label_config)
             label.pack(in_=frame)
             label.place(in_=frame, **places.pop(0))
+            label.bind('<Button-1>', toggler)
             self.labels[idx]['I'] = label
 
             label = tk.Label(self._gui, text="- W", **label_config)
             label.pack()
             label.place(in_=frame, **places.pop(0))
+            label.bind('<Button-1>', toggler)
             self.labels[idx]['P'] = label
 
             label = tk.Label(self._gui, text="- Wh", **label_config)
             label.pack()
             label.place(in_=frame, **places.pop(0))
+            label.bind('<Button-1>', toggler)
             self.labels[idx]['e'] = label
 
         if not 'info_popup' in gui:
@@ -393,15 +399,15 @@ class Plot(Sensor.Sensor):
                         return (None, None, None)
                     return (self._ax_data[0].lines[0], self._data.P, self._ax_data[0].ax)
                 if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
-                    if self.is_channel_active(channel):
-                        return (self._ax_data[0].lines[channel], self._data.channels[channel].I, self._ax_data[0].ax)
+                    # if self.is_channel_active(channel):
+                    return (self._ax_data[0].lines[channel], self._data.channels[channel].I, self._ax_data[0].ax)
                 if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.POWER:
-                    if self.is_channel_active(channel):
-                        return (self._ax_data[0].lines[channel], self._data.channels[channel].P, self._ax_data[0].ax)
+                    # if self.is_channel_active(channel):
+                    return (self._ax_data[0].lines[channel], self._data.channels[channel].P, self._ax_data[0].ax)
 
         elif axis in (1, 2, 3) and self._gui_config.plot_visibility!=PLOT_VISIBILITY.PRIMARY:
-            if self.is_channel_active(channel):
-                return (self._ax_data[axis].lines[0], self._data.channels[channel].U, self._ax_data[axis].ax)
+            # if self.is_channel_active(channel):
+            return (self._ax_data[axis].lines[0], self._data.channels[channel].U, self._ax_data[axis].ax)
 
         return (None, None, None)
 
@@ -418,18 +424,16 @@ class Plot(Sensor.Sensor):
 
     @property
     def active_channels(self):
-        channels = []
-        for index, active in enumerate(self._gui_config.plot_channels):
-            if active:
-                channels.append(self.channels[index])
-        return channels
+        return self.channels
 
-    def is_channel_active(self, channel):
+    def hide_channel(self, num):
         try:
-            self.active_channels[channel]
-            return True
+            if self._gui_config.plot_channels==0:
+                return False
+            if self._gui_config.plot_channels & (1 << num):
+                return True
         except:
-            pass
+            self._gui_config.plot_channels = 0
         return False
 
     def reconfigure_axis(self):
@@ -444,12 +448,15 @@ class Plot(Sensor.Sensor):
                 if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
                     self._plot_margin = NamedTuples.PlotMargin(top=AppConfig.plot.current_top_margin, bottom=AppConfig.plot.current_bottom_margin)
                     self._ax_data[0].ax.set_ylabel('Current (A)', color=self.PLOT_TEXT, **yfont)
+
                 elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.POWER:
                     self._plot_margin = NamedTuples.PlotMargin(top=AppConfig.plot.power_top_margin, bottom=AppConfig.plot.power_bottom_margin)
                     self._ax_data[0].ax.set_ylabel('Power (W)', color=self.PLOT_TEXT, **yfont)
+
                 elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.AGGREGATED_POWER:
                     self._plot_margin = NamedTuples.PlotMargin(top=AppConfig.plot.power_top_margin, bottom=AppConfig.plot.power_bottom_margin)
                     self._ax_data[0].ax.set_ylabel('Aggregated Power (W)', color=self.PLOT_TEXT, **yfont)
+
                 else:
                     raise RuntimeError('reconfigure_axis: plot_primary_display %s' % (self._gui_config.plot_primary_display))
 
@@ -481,24 +488,24 @@ class Plot(Sensor.Sensor):
                             data.lines.append(line)
 
 
-                            def get_color(i):
-                                if colour:
-                                    red = Color("red")
-                                    colors = list(red.range_to(Color("yellow"),5))
-                                    return str(colors[i])
-                                else:
-                                    return '#%02x0000' % (int((5 - i) * 255/5))
+                            # def get_color(i):
+                            #     if colour:
+                            #         red = Color("red")
+                            #         colors = list(red.range_to(Color("yellow"),5))
+                            #         return str(colors[i])
+                            #     else:
+                            #         return '#%02x0000' % (int((5 - i) * 255/5))
 
-                            for i in range(5):
-                                max_current = data.ax.axhline(
-                                    self.ina3221.get_max_current(channel.calibration.shunt) * (1 - (i / 100)) * 0.98,
-                                    zorder=1000,
-                                    xmin=-self.get_time_scale(),
-                                    xmax=self.get_time_scale(),
-                                    color=get_color(i),
-                                    linewidth=AppConfig.plot.line_width,
-                                    ls=':'
-                                )
+                            # for i in range(5):
+                            #     max_current = data.ax.axhline(
+                            #         self.ina3221.get_max_current(channel.calibration.shunt) * (1 - (i / 100)) * 0.98,
+                            #         zorder=1000,
+                            #         xmin=-self.get_time_scale(),
+                            #         xmax=self.get_time_scale(),
+                            #         color=get_color(i),
+                            #         linewidth=AppConfig.plot.line_width,
+                            #         ls=':'
+                            #     )
 
                         elif self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.POWER:
                             line, = data.ax.plot(values, values, color=channel._color_for('P'), label=channel.name + ' P', linewidth=AppConfig.plot.line_width)
@@ -512,11 +519,10 @@ class Plot(Sensor.Sensor):
                     line, = ax.plot(values, values, color=channel._color_for('U'), label=channel.name + ' U', linewidth=AppConfig.plot.line_width)
                     self._ax_data[idx + 1].lines = [line]
 
-                    if not self._raw_values:
-                        if channel.y_limits.voltage_max!=None:
-                            ax.set_ylim(top=channel.y_limits.voltage_max)
-                        if channel.y_limits.voltage_min!=None:
-                            ax.set_ylim(bottom=channel.y_limits.voltage_min)
+                    if channel.y_limits.voltage_max!=None:
+                        ax.set_ylim(top=channel.y_limits.voltage_max)
+                    if channel.y_limits.voltage_min!=None:
+                        ax.set_ylim(bottom=channel.y_limits.voltage_min)
 
             self.add_ticks()
 
@@ -573,7 +579,9 @@ class Plot(Sensor.Sensor):
                     U = np.array(values.U[display_idx:])
                     I = np.array(values.I[display_idx:])
                     P = np.array(values.P[display_idx:])
-                    if self.is_channel_active(channel_index):
+                    if channel_index in self.channels:
+                    # if AppConfig.channels[channel_index].enabled:
+                    # if self.is_channel_active(channel_index):
                         tmp.append(P)
                     channels.append(NamedTuples.PlotChannel(U=U, I=I, P=P))
                     channel_index += 1
@@ -595,6 +603,11 @@ class Plot(Sensor.Sensor):
 
             # ---------------------------------------------------------------------------------------
             for idx, channel in enumerate(self.active_channels):
+
+                if self.hide_channel(idx):
+                    for key, label in self.labels[idx].items():
+                        label.configure(text='')
+                    continue
 
                 # axis 0
                 line, values, ax = self.get_plot_data(0, idx)
@@ -619,11 +632,11 @@ class Plot(Sensor.Sensor):
                     min_val = np.amin(values)
 
                     # limits per channel
-                    if self._raw_values or channel.y_limits.voltage_max==None:
+                    if channel.y_limits.voltage_max==None:
                         y_max1 = round(max_val * AppConfig.plot.voltage_top_margin, 2)
                     else:
                         y_max1 = channel.y_limits.voltage_max
-                    if self._raw_values or channel.y_limits.voltage_min==None:
+                    if channel.y_limits.voltage_min==None:
                         y_min1 = round(min_val * AppConfig.plot.voltage_bottom_margin, 2)
                     else:
                         y_min1 = channel.y_limits.voltage_min
@@ -638,17 +651,19 @@ class Plot(Sensor.Sensor):
                 xpos = x_max - max(1.0, AppConfig.plot.display_top_values_mean_time)
                 avg_idx = np.searchsorted(data.time, xpos)
 
-                if self._raw_values:
-                    labelU_text = round(np.mean(data.channels[idx].U[avg_idx:]), 1)
-                    labelI_text = round(np.mean(data.channels[idx].I[avg_idx:]), 1)
-                    labelP_text = '%.2E' % round(np.mean(data.channels[idx].P[avg_idx:]), 1)
-                    labelE_text = ''
-                else:
-                    labelU_text = fmt.format(np.mean(data.channels[idx].U[avg_idx:]), 'V')
-                    labelI_text = fmt.format(np.mean(data.channels[idx].I[avg_idx:]), 'A')
-                    labelP_text = fmt.format(np.mean(data.channels[idx].P[avg_idx:]), 'W')
-                    tmp = self._gui_config.plot_display_energy==DISPLAY_ENERGY.AH and ('ei', 'Ah') or ('ep', 'Wh')
-                    labelE_text = fmt.format(self.energy[idx][tmp[0]], tmp[1])
+                labelU_text = fmt.format(np.mean(data.channels[idx].U[avg_idx:]), 'V')
+                labelI_text = fmt.format(np.mean(data.channels[idx].I[avg_idx:]), 'A')
+                labelP_text = fmt.format(np.mean(data.channels[idx].P[avg_idx:]), 'W')
+                if self._gui_config.plot_display_energy==DISPLAY_ENERGY.AH:
+                    tmp = ('ei', 'Ah')
+                    val = self.energy[idx][tmp[0]]
+                elif self._gui_config.plot_display_energy==DISPLAY_ENERGY.WH:
+                    tmp = ('ep', 'Wh')
+                    val = self.energy[idx][tmp[0]]
+                    if val>999:
+                        val /= 1000.0
+                        tmp = ('ep', 'kWh')
+                labelE_text = fmt.format(val, tmp[1])
 
                 self.labels[idx]['U'].configure(text=labelU_text)
                 self.labels[idx]['I'].configure(text=labelI_text)

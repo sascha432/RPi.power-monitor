@@ -90,7 +90,7 @@ class BaseApp(object):
 
         self.quit()
         self.debug(__name__, 'exit(%s)', signal)
-        sys.exit(signal)
+        # sys.exit(signal)
 
     def init_signal_handler(self):
         if 'win' in sys.platform:
