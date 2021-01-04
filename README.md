@@ -14,6 +14,8 @@ Power Monitor for the INA3221 sensor.
 
 ![GUI](https://raw.githubusercontent.com/sascha432/RPI.power-monitor/master/images/power_monitor1.jpg)
 
+![GUI](https://raw.githubusercontent.com/sascha432/RPI.power-monitor/master/images/power_monitor2.jpg)
+
 ![Home Assistant Dashboard](https://raw.githubusercontent.com/sascha432/RPI.power-monitor/master/images/homeassistant.jpg)
 
 The INA3221 board is from aliexpress and turned out to be wired with common VCC. It required major rework. Take a close look to get the correct one.
@@ -136,9 +138,10 @@ optional arguments:
 
 ### Touch events
 
+- Top labels: Display/hide channel
 - Left center to bottom: Toggle displayed plots (Main plot, voltage)
 - Right center to bottom: Toggle main plot from (Current, power and aggregated power)
-- Top right and left corner: Increase/decrease displayed timeframe
+- Top right and left corner below the labels: Increase/decrease displayed timeframe
 
 ### Default keyboard shortcuts
 
