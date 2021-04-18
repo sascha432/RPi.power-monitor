@@ -426,6 +426,10 @@ class Plot(Sensor.Sensor):
     def active_channels(self):
         return self.channels
 
+    @property
+    def active_channels_index(self):
+        return [ idx for idx, channel in enumerate(self.active_channels) ]
+
     def hide_channel(self, num):
         try:
             if self._gui_config.plot_channels==0:
@@ -574,14 +578,14 @@ class Plot(Sensor.Sensor):
                 aggregatedP = None
                 channels = []
                 tmp = []
-                channel_index = 0
-                for values in self.values.values():
+
+                for channel_index, values in enumerate(self.values.values()):
                     U = np.array(values.U[display_idx:])
                     I = np.array(values.I[display_idx:])
                     P = np.array(values.P[display_idx:])
-                    if channel_index in self.channels:
-                    # if AppConfig.channels[channel_index].enabled:
-                    # if self.is_channel_active(channel_index):
+
+                    # sum aggregated power for active channels
+                    if channel_index in self.active_channels_index:
                         tmp.append(P)
                     channels.append(NamedTuples.PlotChannel(U=U, I=I, P=P))
                     channel_index += 1
