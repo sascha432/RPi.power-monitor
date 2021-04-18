@@ -14,6 +14,7 @@ from Config import (JsonWriter, YamlWriter)
 from PowerMonitor.MainApp import MainApp
 from PowerMonitor import AppConfig
 from PowerMonitor.Config import Config
+from SDL_Pi_INA3221 import INA3211_CONFIG
 
 if 'win' in sys.platform:
     home_dir = os.environ.get('APPDATA')
@@ -27,6 +28,7 @@ parser.add_argument('--display', help='override DISPLAY variable', type=str, def
 parser.add_argument('--headless', help='start without GUI', action='store_true', default=None)
 parser.add_argument('--fullscreen', help='start in fullscreen mode', action='store_true', default=None)
 parser.add_argument('--daemon', help='run as daemon', action='store_true', default=None)
+parser.add_argument('--fast-mode', help='enable fast mode', action='store_true', default=None)
 parser.add_argument('--verbose', help='enable debug output', action='store_true', default=None)
 parser.add_argument('--check', help='check configuration', action='store_true', default=None)
 parser.add_argument('--print', help='check and display configuration', choices=['json', 'yaml', 'raw'], default=None)
@@ -70,6 +72,13 @@ if args.display!=None:
     AppConfig.gui.display = args.display
 if args.fullscreen!=None:
     AppConfig.gui.fullscreen = args.fullscreen
+if args.fast_mode:
+    AppConfig.ignore_warnings += 1
+    AppConfig.ina3221.averaging_mode = INA3211_CONFIG.AVERAGING_MODE.x1
+    AppConfig.ina3221.vshunt_conversion_time = INA3211_CONFIG.VSHUNT_CONVERSION_TIME.time_140_us
+    AppConfig.ina3221.vshunt_conversion_time = INA3211_CONFIG.VBUS_CONVERSION_TIME.time_140_us
+    print('Fast mode enabled')
+
 AppConfig._debug = args.debug
 
 default_handler = logging.StreamHandler(stream=sys.stdout)
