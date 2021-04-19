@@ -188,7 +188,7 @@ class Mqtt(Influxdb.Influxdb):
                 finally:
                     self._data_lock.release()
 
-                kwh_precision = [(.001, 6), (.01, 5), (.1, 4), (1.0, 4), (100.0, 2), (None, 0)]
+                kwh_precision = [(.001, 6), (.01, 5), (.1, 4), (1.0, 4), (100.0, 2), (10000.0, 1), (10000000000.0, 0)]
 
                 try:
                     sum_P = 0

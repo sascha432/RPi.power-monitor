@@ -93,7 +93,7 @@ class MainApp(Plot.Plot):
         if self._gui:
             self._gui.quit()
 
-    def format_float_precision(self, value, limits = [(1.0, 4), (10.0, 3), (100.0, 2), (1000.0, 1), (None, 0)], fmt='%%.%uf'):
+    def format_float_precision(self, value, limits = [(1.0, 4), (10.0, 3), (100.0, 2), (1000.0, 1), (10000.0, 1), (10000000000.0, 0)], fmt='%%.%uf'):
         if value == 0:
             return '0.0'
         for max_value, digits in limits:
