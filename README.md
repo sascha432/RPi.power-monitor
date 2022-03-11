@@ -26,9 +26,13 @@ For high currents (5-10A), the shunts need to be replaced and the traces reinfor
 ## Requirements
 
 - python3
-- smbus
-- numpy
+- python3-smbus
+- python3-numpy
 - sqlite3
+
+```bash
+apt install <package>
+```
 
 Tested with Python 3.7.8 on windows and Python 3.7.3 on debian (armv7l)
 
@@ -38,14 +42,18 @@ Tested with Python 3.7.8 on windows and Python 3.7.3 on debian (armv7l)
 - The menu is not implemented yet
 - Storing raw data in influxdb is not working. This might be a minor issue with the json data posted, which I did not address yet
 
-### Optional python packges
+### Optional python packages
 
-- paho.mqtt.client for MQTT support
+- paho.mqtt for MQTT support
 - commentjson for reading configuration files with comments
-- matplotlib and tkinter for the GUI
+- matplotlib and tkinter for the GUI (`apt install python3-matplotlib python3-tk`)
 - colorlog
 - colour
 - influxdb
+
+```bash
+pip3 install <package>
+```
 
 ### Windows limitations
 
