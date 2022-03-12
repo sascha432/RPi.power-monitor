@@ -5,7 +5,9 @@
             "name": "Channel 1 (5V)",
             // display channel in GUI
             "enabled": true,
-            // default voltage
+            // add to aggregated power. this is useful if one channel provides the power for another channel with a step-up or down converter
+            "aggregate_power": true,
+            // default voltage displayed by a blue dashed line
             "voltage": 5.3,
             "calibration": {
                 // shunt resistance in milliohm
@@ -19,7 +21,7 @@
                 // multiplier = displayed current / real current
                 "vshunt_multiplier": 0.994137858,
                 // calibration multiplier for bus voltage = real voltage / displayed voltage
-                // bus voltage is load voltage + shunt voltage. makem sure to measure the correct side of the shunt or without any load
+                // bus voltage is load voltage + shunt voltage. make sure to measure the correct side of the shunt or without any load
                 // multiplier = (load voltage + shunt voltage OR bus voltage) / displayed load voltage
                 "vbus_multiplier": 1.0
             }
@@ -27,6 +29,7 @@
         {
             "name": "Channel 2 (12V)",
             "enabled": true,
+            "aggregate_power": true,
             "voltage": 12.0,
             "calibration": {
                 "shunt": 25.0,
@@ -38,16 +41,23 @@
         {
             "name": "Channel 3 (19V)",
             "enabled": false,
+            "aggregate_power": true,
             "voltage": 19.5,
             "calibration": {
                 "shunt": 50.0
             }
         }
     ],
-    "idle_check_cmd": "/usr/bin/xset -display {DISPLAY} q",
+    // this only works with DPMS but not screen blanking
+    // the command can be replaced with anything to detect the state modifying the regular expressions below
+    "idle_check_cmd": "/usr/bin/xset -display ${DISPLAY} -q",
+    // regex case-insensitive to detect if the monitor is on
+    "idle_check_monitor_on": "^\\s*monitor is on",
+    "idle_check_monitor_off": "^\\s*monitor is off",
     "gui": {
         // with x height x scaling
         "geometry": "800x480x1.0",
+        //"geometry": "1024x600x1.0",
         "color_scheme": "DARK",
         "fullscreen": true,
         "display": ":0.0",

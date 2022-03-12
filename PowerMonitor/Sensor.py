@@ -29,7 +29,7 @@ class Sensor(Mqtt.Mqtt):
         global AppConfig
         AppConfig = self._app_config
 
-        self._energy_backp_file_num = 0
+        self._energy_backup_file_num = 0
         self._read_sensor_thread_state = {'quit': False}
         self._read_count = 0
         self._errors = 0
@@ -38,16 +38,16 @@ class Sensor(Mqtt.Mqtt):
         if not self._init_ina3221_sensor():
             self._errors += 1
 
-    def _init_ina3221_sensor(self, init_calib=False):
+    def _init_ina3221_sensor(self, init_calibration=False):
         if AppConfig.ina3221.auto_mode_sensor_values_per_second!=None and AppConfig.ina3221.auto_mode_sensor_values_per_second!=0:
-            avg, vbus, vshunt, interval, olist = SDL_Pi_INA3221.INA3221.get_interval_params(1 / AppConfig.ina3221.auto_mode_sensor_values_per_second)
+            avg, vbus, vshunt, interval, o_list = SDL_Pi_INA3221.INA3221.get_interval_params(1 / AppConfig.ina3221.auto_mode_sensor_values_per_second)
         else:
             avg = AppConfig.ina3221.averaging_mode
             vbus = AppConfig.ina3221.vbus_conversion_time
             vshunt = AppConfig.ina3221.vshunt_conversion_time
         try:
             self.ina3221 = SDL_Pi_INA3221.INA3221(addr=AppConfig.ina3221.i2c_address, avg=avg, vbus_ct=vbus, vshunt_ct=vbus, shunt=1)
-            if init_calib:
+            if init_calibration:
                 self.ina3221._calibration = ChannelCalibration(AppConfig)
         except Exception as e:
             self.error(__name__, 'exception while initializing INA3221 sensor: %s' % e)
@@ -144,11 +144,10 @@ class Sensor(Mqtt.Mqtt):
                                 tmp = None
                                 break
 
-
                     if self._errors==0 and len(tmp):
                         # lock'n'copy
 
-                        store_energy_data = None
+                        # store_energy_data = None
                         diff_limit = self.ina3221._channel_read_time * len(self.channels) * 3
                         self._data_lock.acquire()
                         try:
@@ -162,7 +161,7 @@ class Sensor(Mqtt.Mqtt):
                                 self.averages[2][index] += current
                                 self.averages[3][index] += power
 
-                                # due to the resoluation of the timestamp, energy can only be calculated precisely having an interval > 50ms
+                                # due to the resolution of the timestamp, energy can only be calculated precisely having an interval > 50ms
                                 # precision will benefit from even longer intervals
                                 if self.ina3221._channel_read_time>=Sensor.ENERGY_MIN_READTIME:
                                     if self.energy[index]['t']==0 or ts==0:
@@ -175,7 +174,7 @@ class Sensor(Mqtt.Mqtt):
                                             self.energy[index]['ep'] += (diff * power / 3600)
                                         else:
                                             if diff>diff_limit * 10:
-                                                self.error(__name__, 'sensor read timeout for channel number %u: %.3fsec channels: %u read time: %.6fms', (index + 1), diff, len(self.channels), self.ina3221._channel_read_time / 1000000)
+                                                self.error(__name__, 'sensor read timeout for channel number %u: %.3fs channels: %u read time: %.6fms', (index + 1), diff, len(self.channels), self.ina3221._channel_read_time / 1000000)
                                         self.energy[index]['t'] = ts
 
                                     if t>self.energy['stored'] + min(30, AppConfig.store_energy_interval): # limited to >=30 seconds
@@ -205,11 +204,11 @@ class Sensor(Mqtt.Mqtt):
                 self._read_count += 1
                 self._read_sensor_thread_listener.sleep(diff, self.read_sensor_thread_handler)
 
-                # if any error occurs, let it finish reading all channels and try to reinitilize here
+                # if any error occurs, let it finish reading all channels and try to reinitialize here
                 if self._errors>0:
                     self.energy[index]['t'] = 0
                     while True:
-                        self.info(__name__, 'waiting 5 seconds before trying to reintialize the sensor: errors=%u', self._errors)
+                        self.info(__name__, 'waiting 5 seconds before trying to reinitialize the sensor: errors=%u', self._errors)
                         self._read_sensor_thread_listener.sleep(5.0, self.read_sensor_thread_handler)
                         if self._read_sensor_thread_state['quit']:
                             break
@@ -271,18 +270,18 @@ class Sensor(Mqtt.Mqtt):
         self.averages = np.zeros((4, 3))
 
     def _get_array_len(self):
-        minl = len(self.values._t)
-        maxl = minl
+        min_l = len(self.values._t)
+        max_l = min_l
         for index, channel in enumerate(self.channels):
-            minl = min(minl, len(self.values[index].U), len(self.values[index].I), len(self.values[index].P))
-            maxl = max(maxl, len(self.values[index].U), len(self.values[index].I), len(self.values[index].P))
-        return (minl, maxl)
+            min_l = min(min_l, len(self.values[index].U), len(self.values[index].I), len(self.values[index].P))
+            max_l = max(max_l, len(self.values[index].U), len(self.values[index].I), len(self.values[index].P))
+        return (min_l, max_l)
 
     def _validate_array_len(self, test_id):
-        minl, maxl = self._get_array_len()
-        if minl==maxl:
+        min_l, max_l = self._get_array_len()
+        if min_l==max_l:
             return
-        self.error(__name__, 'array length mismatch: id=%s min=%u max=%u', test_id, minl, maxl)
+        self.error(__name__, 'array length mismatch: id=%s min=%u max=%u', test_id, min_l, max_l)
 
     def aggregate_sensor_values(self):
         try:
@@ -312,22 +311,22 @@ class Sensor(Mqtt.Mqtt):
                 self._compress_data_timeout = t + 5
                 self._scheduler.enter(1.0, Enums.SCHEDULER_PRIO.COMPRESS_DATA, self.compress_values)
 
-            minl, maxl = self._get_array_len()
-            if minl!=maxl:
-                if min_len==0:
+            min_l, max_l = self._get_array_len()
+            if min_l!=max_l:
+                if min_l==0:
                     return
 
                 tmp = {'t': len(self.values._t)}
-                self.values._t = self.values._t[0:minl]
+                self.values._t = self.values._t[0:min_l]
                 for index, channel in enumerate(self.channels):
                     tmp[index] = {
                         'U': len(self.values[index].U),
                         'I': len(self.values[index].I),
                         'P': len(self.values[index].P),
                     }
-                    self.values[index].U = self.values[index].U[0:minl]
-                    self.values[index].I = self.values[index].I[0:minl]
-                    self.values[index].P = self.values[index].P[0:minl]
+                    self.values[index].U = self.values[index].U[0:min_l]
+                    self.values[index].I = self.values[index].I[0:min_l]
+                    self.values[index].P = self.values[index].P[0:min_l]
 
             return True
         except Exception as e:

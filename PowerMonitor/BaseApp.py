@@ -135,7 +135,7 @@ class BaseApp(object):
         self.thread_lock.acquire()
         try:
             self._threads.append(thread)
-            self.debug(__name__, 'daemonizing %s (%u)' % (name, len(self._threads)))
+            self.debug(__name__, 'demonizing %s (%u)' % (name, len(self._threads)))
         finally:
             self.thread_lock.release()
 
@@ -211,7 +211,7 @@ class BaseApp(object):
         self.init_signal_handler()
 
         if daemon:
-            self.debug(__name__, 'daemonizing...')
+            self.debug(__name__, 'demonizing...')
             self.fork()
 
             file = AppConfig.get_filename(AppConfig.pid_file)

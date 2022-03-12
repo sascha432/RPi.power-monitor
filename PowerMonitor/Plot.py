@@ -283,8 +283,8 @@ class Plot(Sensor.Sensor):
 
     def update_y_ticks_primary(self, y, pos):
         if self._gui_config.plot_primary_display==PLOT_PRIMARY_DISPLAY.CURRENT:
-            ymin, ymax = self._ax_data[0].ax.get_ylim()
-            diff = ymax - ymin
+            y_min, y_max = self._ax_data[0].ax.get_ylim()
+            diff = y_max - y_min
             if diff<1.0:
                 return '%d' % (int(y * 1000))
         return '%.2f' % y
@@ -474,10 +474,10 @@ class Plot(Sensor.Sensor):
 
             values = []
 
-            x_limits = {
-                'xmin': -self.get_time_scale(),
-                'xmax': self.get_time_scale()
-            }
+            # x_limits = {
+            #     'xmin': -self.get_time_scale(),
+            #     'xmax': self.get_time_scale()
+            # }
 
             # primary plot current or for power for all channels
             data = self._ax_data[0]
@@ -572,20 +572,21 @@ class Plot(Sensor.Sensor):
                 x_max = self.values.max_time()
                 x_min = x_max - self.get_time_scale()
 
-                dtime = np.array(self.values._t)
-                display_idx = np.searchsorted(dtime, x_min)
+                d_time = np.array(self.values._t)
+                display_idx = np.searchsorted(d_time, x_min)
 
                 aggregatedP = None
                 channels = []
                 tmp = []
 
                 for channel_index, values in enumerate(self.values.values()):
+
                     U = np.array(values.U[display_idx:])
                     I = np.array(values.I[display_idx:])
                     P = np.array(values.P[display_idx:])
 
                     # sum aggregated power for active channels
-                    if channel_index in self.active_channels_index:
+                    if self.channels[channel_index].aggregate_power and channel_index in self.active_channels_index:
                         tmp.append(P)
                     channels.append(NamedTuples.PlotChannel(U=U, I=I, P=P))
                     channel_index += 1
@@ -652,8 +653,8 @@ class Plot(Sensor.Sensor):
 
                 # top labels, one per channel
 
-                xpos = x_max - max(1.0, AppConfig.plot.display_top_values_mean_time)
-                avg_idx = np.searchsorted(data.time, xpos)
+                x_pos = x_max - max(1.0, AppConfig.plot.display_top_values_mean_time)
+                avg_idx = np.searchsorted(data.time, x_pos)
 
                 labelU_text = fmt.format(np.mean(data.channels[idx].U[avg_idx:]), 'V')
                 labelI_text = fmt.format(np.mean(data.channels[idx].I[avg_idx:]), 'A')
