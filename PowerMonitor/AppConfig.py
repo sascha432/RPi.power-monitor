@@ -11,7 +11,7 @@ import socket
 
 class App(Base):
 
-    VERSION = '0.0.1'
+    VERSION = '0.0.2'
 
     blit = False
 
@@ -24,7 +24,7 @@ class App(Base):
     store_energy_interval = TimeConverter.value(60)
 
     idle_check_interval = TimeConverter.value(2, 's')
-    idle_check_cmd = '/usr/bin/xset -display {DISPLAY} q'
+    idle_check_cmd = '/usr/bin/xset -display ${DISPLAY} -q'
     # multi line regexp with ignore case
     idle_check_monitor_on = '^\s*monitor is on'
     idle_check_monitor_off = '^\s*monitor is off'
@@ -54,6 +54,7 @@ class Channel(ItemBase):
     number = (lambda path: path.index + 1, (Param.ReadOnly,))
     index = (lambda path: path.index, (Param.ReadOnly,))
     enabled = False
+    aggregate_power = True
     voltage = (None, (float))
     color = (None, (str,))
     hline_color = (None, (str,))
@@ -202,12 +203,12 @@ class Mqtt(Base):
     payload_online = '1'
     payload_offline = '0'
 
-    # consts
+    # constants
 
     STATUS_TOPIC = '{topic_prefix}/{device_name}/{sensor_name}/status'
     CHANNEL_TOPIC = '{topic_prefix}/{device_name}/{sensor_name}/ch{channel}'
 
-    AUTO_DISCOVERY_TOPC = '{auto_discovery_prefix}/sensor/{device_name}_{sensor_name}_ch{channel}_{entity}/config'
+    AUTO_DISCOVERY_TOPIC = '{auto_discovery_prefix}/sensor/{device_name}_{sensor_name}_ch{channel}_{entity}/config'
     MODEL = 'RPI.ina3221-power-monitor'
     MANUFACTURER = 'KFCLabs'
     ENTITIES = { 'U': 'V', 'P': 'W', 'I': 'A', 'EP': 'kWh', 'EI': 'Ah' }
@@ -231,7 +232,7 @@ class Mqtt(Base):
         return self._format_topic(self.STATUS_TOPIC)
 
     def get_auto_discovery_topic(self, channel, entity):
-        return self._format_topic(self.AUTO_DISCOVERY_TOPC, channel=channel, entity=entity)
+        return self._format_topic(self.AUTO_DISCOVERY_TOPIC, channel=channel, entity=entity)
 
 
 class Calibration(Base):
