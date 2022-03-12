@@ -100,6 +100,10 @@
         "averaging_mode": "x64",
         "vshunt_conversion_time": "time_1100_us",
         "vbus_conversion_time": "time_1100_us"
+        // fastest mode
+        // "averaging_mode": "x1",
+        // "vshunt_conversion_time": "time_140_us",
+        // "vbus_conversion_time": "time_140_us"
     },
     "mqtt": {
         "host": "localhost",
