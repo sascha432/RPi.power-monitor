@@ -9,7 +9,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name='INA3221 Power Monitor',
-    version="0.0.1.2",
+    version="0.0.2",
     author="Sascha Lammers",
     author_email="sascha_lammers@gmx.de",
     packages=setuptools.find_packages(),

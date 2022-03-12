@@ -10,7 +10,7 @@ Power Monitor for the INA3221 sensor.
 - Idle detection to reduce CPU load
 - Long time monitoring with energy calculation (averaging mode from 4 times per second to 3.75 times per minute)
 - High res mode with over 7000 samples per second (energy is disabled in high res mode)
-- MQTT averaging can be configure independently from the live preview
+- MQTT averaging can be configured independently from the live preview
 
 ![GUI](https://raw.githubusercontent.com/sascha432/RPI.power-monitor/master/images/power_monitor1.jpg)
 
@@ -34,7 +34,9 @@ For high currents (5-10A), the shunts need to be replaced and the traces reinfor
 apt install <package>
 ```
 
-Tested with Python 3.7.8 on windows and Python 3.7.3 on debian (armv7l)
+Currently running on Python 3.9.2, Debian 11.2 (armv7l)
+
+Tested with Python 3.7.8 on Windows and Python 3.7.3 on Debian (armv7l)
 
 ### Known issues
 
@@ -44,13 +46,17 @@ Tested with Python 3.7.8 on windows and Python 3.7.3 on debian (armv7l)
 
 ### Optional python packages
 
+**NOTE:** some packages require apt install with debian bullseye
+
+Run `pip3 install -r requirements.txt` to install all python packages
+
 - paho.mqtt for MQTT support
 - commentjson for reading configuration files with comments
 - matplotlib and tkinter for the GUI (`apt install python3-matplotlib python3-tk`)
 - beeprint
 - colorlog
 - colour
-- influxdb
+- influxdb (apt ..., consider to add the influxdb repository to apt sources)
 
 ```bash
 pip3 install <package>
@@ -96,17 +102,19 @@ The energy is stored once per minute in sqlite3 in `$HOME/.power_monitor/powermo
 
 If there is any issues reading the sensor, there is a 5 second pause before it is reset and any further attempt reading it is made.
 
-How to get solid readings
+How to get solid readings. An indication of interferences is huge spikes in voltage or current for a single reading.
 
 - Check for loose connections first, sometimes this happens when it warms up
 - Moving the wires away from anything that can cause interferences
 - Shielding the I2C bus wires
-- Adding additional pullup resistors to the bus
+- Adding additional pull-up resistors to the bus
 - Reducing the data rate of the bus
 
 ### Running with GUI
 
 Set the DISPLAY environment variable before starting the monitor or pass the display with `--display=:0`
+
+**NOTE:** Currently it is not possible to detect screen blanking to disable the UI while the screen is off unless DPMS is used to turn of the screen
 
 ### Running headless
 
