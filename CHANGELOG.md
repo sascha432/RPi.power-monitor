@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.3-dev
+
+ - next version placeholder
+
 ## 0.0.2
 
  - Option to select channels for aggregated power consumption
