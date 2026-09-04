@@ -412,13 +412,20 @@ class Plot(Sensor.Sensor):
         return (None, None, None)
 
     def set_plot_geometry(self):
+        grids = {}
         for idx, data in enumerate(self._ax_data):
             ax = data.ax
             n = self.get_plot_geometry(idx)
             self.debug(__name__, 'idx=%u visibility=%s get_plot_geometry=%s', idx, str(self._gui_config.plot_visibility), n)
             if n!=None:
                 ax.set_visible(True)
-                ax.change_geometry(int(n / 100) % 10, int(n / 10) % 10, int(n) % 10)
+                rows = int(n / 100) % 10
+                cols = int(n / 10) % 10
+                position = int(n) % 10
+                key = (rows, cols)
+                if key not in grids:
+                    grids[key] = matplotlib.gridspec.GridSpec(rows, cols, figure=self.fig)
+                ax.set_subplotspec(grids[key][position - 1])
             elif ax:
                 ax.set_visible(False)
 
