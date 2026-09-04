@@ -10,6 +10,7 @@ from .Calibration import Calibration
 from datetime import datetime
 from enum import Enum
 import sys
+import time
 try:
     import smbus
 except:

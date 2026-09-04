@@ -10,3 +10,4 @@ win/
 pm
 images/Thumbs.db
 .vscode/
+build/*
