@@ -1,5 +1,7 @@
 # RPi.power-monitor
 
+Check out [https://github.com/sascha432/rpi-power-monitor](https://github.com/sascha432/rpi-power-monitor) for Version 2
+
 Power Monitor for the INA3221 sensor.
 
 - 3 Channels (Voltage, Current, Power, Energy Wh/Ah)
